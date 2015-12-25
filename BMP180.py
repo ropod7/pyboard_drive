@@ -1,4 +1,4 @@
-# main.py -- controlling barometer BMP180
+# BMP180.py -- controlling barometer BMP180
 
 import struct
 
