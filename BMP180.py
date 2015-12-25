@@ -1,6 +1,6 @@
-# BMP180.py -- controlling barometer
+# main.py -- controlling barometer BMP180
 
-import struct, math
+import struct
 
 import pyb, micropython
 from pyb import I2C, Switch
@@ -13,29 +13,19 @@ sw = Switch()
 # oversampling setting (short 0..3)
 oss = 3
 
-# sea level Zero point in hPa
-PaZero = 1013.25
-
-def change_format(n, tp):
-    types = dict(
-            long = '<l',
-            ulong = '<L',
-            ushort = '<H',
-            short = '<h',
-        )
-    formatted = struct.unpack(types[tp], struct.pack(types[tp], n))[0]
-    return formatted
+# standard sea level at Zero point in hPa
+#hPaZero = 1013.25
 
 def get_I2C_calib(msb, lsb, unsigned=False):
     # 'H' = unsigned short, 'h' = signed short
     tp = '<H' if unsigned else '<h'
     MSB = struct.unpack(tp, i2c.mem_read(1, 0x77, msb))[0]
     LSB = struct.unpack(tp, i2c.mem_read(1, 0x77, lsb))[0]
-    tp = 'ushort' if unsigned else 'short'
-    data = change_format((MSB<<8 | LSB), tp)
+    data = struct.unpack(tp, struct.pack(tp, (MSB<<8 | LSB)))[0]
 
     return data
 
+# function returns calibration data
 def read_E2PROM_regs():
     data = dict()
     data['AC1'] = get_I2C_calib(0xAA, 0xAB)
@@ -55,106 +45,106 @@ def read_E2PROM_regs():
 def read_BMP180_temp():
     UT = 0
     for i in range(3):
+        # writing read temp register 0x2E
         i2c.mem_write(0x2E, 0x77, 0xF4)
-        pyb.delay(4)
+        pyb.udelay(4500)
 
         MSB = struct.unpack("<h", i2c.mem_read(1, 0x77, 0xF6))[0]
         LSB = struct.unpack("<h", i2c.mem_read(1, 0x77, 0xF7))[0]
 
-        UT += (MSB*2**8) | LSB
+        UT += (MSB<<8) | LSB
 
     return int(UT/3)
-
-def calc_true_Temp():
-    UT = read_BMP180_temp()
-    x1 = (UT - data['AC6']) * data['AC5'] / 2**15    # data>>15 == data / 2**15
-    x1 = int(x1)
-    x2 = (data['MC'] * 2**11) / (x1 + data['MD'])    # data<<11 == data * 2**11
-    x2 = int(x2)
-    b5 = x1 + x2
-    #print(x1, x2, UT)
-
-    tempC = round(((b5 + 8) / pow(2, 4)) * 0.1, 1)
-    return tempC, b5
 
 def read_BMP180_pressure():
     data = 0x34 + (oss<<6)
     UP = 0
     for i in range(3):
+        # writing read pressure register
+        # with oversampling reg setting: 0x34 + (oss<<6)
         i2c.mem_write(data, 0x77, 0xF4)
         pyb.delay(2 + (3<<oss))
 
         MSB = struct.unpack("<L", i2c.mem_read(1, 0x77, 0xF6))[0]
         LSB = struct.unpack("<L", i2c.mem_read(1, 0x77, 0xF7))[0]
         XLSB = struct.unpack("<L", i2c.mem_read(1, 0x77, 0xF8))[0]
-        UP += (MSB*2**16 | LSB*2**8 | XLSB) >> (8 - oss)
+        UP += (MSB<<16 | LSB<<8 | XLSB) >> (8 - oss)
 
-    return int(UP/3)
+    return UP/3
+
+def calc_true_temp():
+    UT = read_BMP180_temp()
+    x1 = (UT - data['AC6']) * data['AC5']>>15    # data>>15 == data / 2**15
+    x2 = (data['MC']<<11) / (x1 + data['MD'])    # data<<11 == data * 2**11
+    b5 = x1 + x2
+
+    tempC = round(((b5 + 8) / pow(2, 4)) * 0.1, 1)
+    return tempC, b5
 
 def calc_true_pressure():
     UP = read_BMP180_pressure()
-    b5 = int(calc_true_Temp()[1])
+    b5 = calc_true_temp()[1]
     b6 = b5 - 4000
 
     # calculate b3
-    x1 = (b6 * b6) / 2**12
+    x1 = int(b6 * b6)>>12
     x1 *= data['B2']
-    x1 /= 2**11
-    x1 = int(x1)
-    x2 = int((data['AC2'] * b6) / 2**11)
-    x3 = int(x1 + x2)
+    x1 >>= 11
+    x2 = int(data['AC2'] * b6)>>11
+    x3 = x1 + x2
     b3 = (((data['AC1'] * 4 + x3) * 2 ** oss) + 2) / 4
-    #print(b6, b5, x1, x2, x3, b3)
 
     # calculate b4
-    x1 = (data['AC3'] * b6) / 2**13
-    x2 = (data['B1'] *((b6 * b6) / 2**12)) / 2**16
-    x3 = ((x1 + x2) + 2) / 4
-    ulong_n = change_format(int(x3) + 32768, 'ulong')
-    b4 = data['AC4'] * (ulong_n) / 2**15
-    b4 = change_format(int(b4), 'ulong')
+    x1 = int(data['AC3'] * b6)>>13
+    x2 = (data['B1'] *(int(b6 * b6)>>12))>>16
+    x3 = ((x1 + x2) + 2)>>2
+    b4 = data['AC4'] * (x3 + 32768) / 2**15
 
-    ulong_UP = change_format(UP, 'ulong')
-    b7 = (ulong_UP - b3) * (50000>>oss)
-    b7 = change_format(int(b7), 'ulong')
+    b7 = (UP - b3) * (50000>>oss)
 
     if b7 < 0x80000000:
         p = (b7*2) / b4
     else:
-        p = int(b7 / b4) * 2
+        p = (b7 / b4) * 2
 
     x1 = p / 2**8
     x1 *= x1
     x1 = (x1 * 3038) / 2**16
-    x2 = (-7357*p) / 2**16
+    x2 = (-7357 * p) / 2**16
 
     # pressure in Pa
-    pressure = p + (x1 + x2 + 3791)  / 2**4
+    Pa = p + (x1 + x2 + 3791) / 2**4
 
-    return pressure
+    return Pa
 
-def calc_meters_above_Sea_Level():
+def calc_meters_hpa():
     Pa = calc_true_pressure()
-    hPa = round(Pa/100, 2)
+    hPa = Pa/100
 
-    altitude = 44330 * (1 - math.pow((hPa/PaZero), (1/5.255)) )
+    try:
+        altitude = 44330 * (1 - (hPa/hPaZero)**(1/5.255) )
+        return round(altitude, 1), round(hPa, 2)
 
-    return round(altitude, 1), hPa
+    except NameError:
+        return hPa
 
 def print_temp_meters():
-    t = calc_true_Temp()[0]
-    altitude, hPa = calc_meters_above_Sea_Level()
+    t = calc_true_temp()[0]
+    altitude, hPa = calc_meters_hpa()
     string = """
     temperature = {0}C
-    altitude = {1}m
+    Value from Zero point:
+        altitude = {1}m
     pressure = {2}hPa
-    \n\n\n
+    \n
     """
     return string.format(t, altitude, hPa)
 
+# get calibration regs
+pyb.delay(500)
 data = read_E2PROM_regs()
-
-#print(print_temp_meters())
+# get Zero point in hPa
+hPaZero = calc_meters_hpa()
 
 while True:
     while sw():
