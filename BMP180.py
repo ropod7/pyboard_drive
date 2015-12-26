@@ -146,9 +146,8 @@ def print_temp_meters():
     return string.format(t, altitude, hPa)
 
 # get calibration regs
-pyb.delay(500)
 data = read_E2PROM_regs()
-# get Zero point in hPa
+# get Zero point in hPa on system start
 hPaZero = calc_meters_hpa()
 
 while True:
