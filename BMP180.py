@@ -15,14 +15,17 @@ sw = Switch()
 # oversampling setting (short 0..3)
 oss = 3
 
+# slave (device) address that scanned by I2C.scan():
+sladdr = 0x77
+
 # standard sea level at Zero point in hPa
 #hPaZero = 1013.25
 
 def get_I2C_calib(msb, lsb, unsigned=False):
     # 'H' = unsigned short, 'h' = signed short
     tp = '<H' if unsigned else '<h'
-    MSB = struct.unpack(tp, i2c.mem_read(1, 0x77, msb))[0]
-    LSB = struct.unpack(tp, i2c.mem_read(1, 0x77, lsb))[0]
+    MSB = struct.unpack(tp, i2c.mem_read(1, sladdr, msb))[0]
+    LSB = struct.unpack(tp, i2c.mem_read(1, sladdr, lsb))[0]
     data = struct.unpack(tp, struct.pack(tp, (MSB<<8 | LSB)))[0]
 
     return data
@@ -48,11 +51,11 @@ def read_BMP180_temp():
     UT = 0
     for i in range(3):
         # writing read temp register 0x2E
-        i2c.mem_write(0x2E, 0x77, 0xF4)
+        i2c.mem_write(0x2E, sladdr, 0xF4)
         pyb.udelay(4500)
 
-        MSB = struct.unpack("<h", i2c.mem_read(1, 0x77, 0xF6))[0]
-        LSB = struct.unpack("<h", i2c.mem_read(1, 0x77, 0xF7))[0]
+        MSB = struct.unpack("<h", i2c.mem_read(1, sladdr, 0xF6))[0]
+        LSB = struct.unpack("<h", i2c.mem_read(1, sladdr, 0xF7))[0]
 
         UT += (MSB<<8) | LSB
 
@@ -64,12 +67,12 @@ def read_BMP180_pressure():
     for i in range(3):
         # writing read pressure register
         # with oversampling reg setting: 0x34 + (oss<<6)
-        i2c.mem_write(data, 0x77, 0xF4)
+        i2c.mem_write(data, sladdr, 0xF4)
         pyb.delay(2 + (3<<oss))
 
-        MSB = struct.unpack("<L", i2c.mem_read(1, 0x77, 0xF6))[0]
-        LSB = struct.unpack("<L", i2c.mem_read(1, 0x77, 0xF7))[0]
-        XLSB = struct.unpack("<L", i2c.mem_read(1, 0x77, 0xF8))[0]
+        MSB = struct.unpack("<L", i2c.mem_read(1, sladdr, 0xF6))[0]
+        LSB = struct.unpack("<L", i2c.mem_read(1, sladdr, 0xF7))[0]
+        XLSB = struct.unpack("<L", i2c.mem_read(1, sladdr, 0xF8))[0]
         UP += (MSB<<16 | LSB<<8 | XLSB) >> (8 - oss)
 
     return UP/3
