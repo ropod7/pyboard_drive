@@ -5,9 +5,11 @@ import struct
 import pyb, micropython
 from pyb import I2C, Switch
 
+pyb.freq(64000000)
+
 micropython.alloc_emergency_exception_buf(100)
 
-i2c = I2C(2, I2C.MASTER, baudrate=3000)
+i2c = I2C(2, I2C.MASTER, baudrate=4500000)
 sw = Switch()
 
 # oversampling setting (short 0..3)
