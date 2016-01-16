@@ -1,4 +1,8 @@
-# main.py - controlling LCD ili9341
+#
+#   WORK IN PROGRESS.
+#
+
+# main.py - controlling LCD ili9341 
 
 import struct
 
