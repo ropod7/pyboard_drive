@@ -1,76 +1,17 @@
 #
-#   WORK IN PROGRESS.
+#    WORK IN PROGRESS
 #
-
-# main.py - controlling LCD ili9341 
+# main.py - controlling LCD ili9341
+# trying to connect by 3-Line method as shown in datasheet
+# where using | SDA | SCL | CSX | lines only
+# still have not hardware feedback
 
 import struct
 
 import pyb, micropython
-from pyb import SPI, Pin, ExtInt
+from pyb import SPI, Pin
 
 micropython.alloc_emergency_exception_buf(100)
-
-pyb.freq(64000000)
-
-ILI9341_TFTWIDTH  = 240
-ILI9341_TFTHEIGHT = 320
-
-ILI9341_NOP       = 0x00
-ILI9341_SWRESET   = 0x01
-ILI9341_RDDID     = 0x04
-ILI9341_RDDST     = 0x09
-
-ILI9341_SLPIN     = 0x10
-ILI9341_SLPOUT    = 0x11
-ILI9341_PTLON     = 0x12
-ILI9341_NORON     = 0x13
-
-ILI9341_RDMODE    = 0x0A
-ILI9341_RDMADCTL  = 0x0B
-ILI9341_RDPIXFMT  = 0x0C
-ILI9341_RDIMGFMT  = 0x0D
-ILI9341_RDSELFDIAG = 0x0F
-
-ILI9341_INVOFF     = 0x20
-ILI9341_INVON      = 0x21
-ILI9341_GAMMASET   = 0x26
-ILI9341_DISPOFF    = 0x28
-ILI9341_DISPON     = 0x29
-
-ILI9341_CASET      = 0x2A
-ILI9341_PASET      = 0x2B
-ILI9341_RAMWR      = 0x2C
-ILI9341_RAMRD      = 0x2E
-
-ILI9341_PTLAR      = 0x30
-ILI9341_MADCTL     = 0x36
-ILI9341_PIXFMT     = 0x3A
-
-ILI9341_FRMCTR1    = 0xB1
-ILI9341_FRMCTR2    = 0xB2
-ILI9341_FRMCTR3    = 0xB3
-ILI9341_INVCTR     = 0xB4
-ILI9341_DFUNCTR    = 0xB6
-
-ILI9341_PWCTR1     = 0xC0
-ILI9341_PWCTR2     = 0xC1
-ILI9341_PWCTR3     = 0xC2
-ILI9341_PWCTR4     = 0xC3
-ILI9341_PWCTR5     = 0xC4
-ILI9341_VMCTR1     = 0xC5
-ILI9341_VMCTR2     = 0xC7
-
-ILI9341_RDID1      = 0xDA
-ILI9341_RDID2      = 0xDB
-ILI9341_RDID3      = 0xDC
-ILI9341_RDID4      = 0xDD
-
-ILI9341_GMCTRP1    = 0xE0
-ILI9341_GMCTRN1    = 0xE1
-#ILI9341_PWCTR6     =  0xFC
-
-
 
 # Color definitions
 ILI9341_BLACK       = 0x0000      #   0,   0,   0
@@ -93,29 +34,94 @@ ILI9341_ORANGE      = 0xFD20      # 255, 165,   0
 ILI9341_GREENYELLOW = 0xAFE5      # 173, 255,  47
 ILI9341_PINK        = 0xF81F
 
-spi = SPI(1, SPI.MASTER, baudrate=32000, polarity=0, phase=1, firstbit=SPI.MSB)
-csx = Pin('X4', Pin.OUT_PP)
+TFTWIDTH  = 240
+TFTHEIGHT = 320
 
-def lcd_write(word, dc):
+# LCD control registers
+SWRESET   = 0x01    # Software Reset (page 90)
+RDDID     = 0x04    # Read display identification information (page 91)
+RDDST     = 0x09    # Read Display Status (page 92)
+RDMODE    = 0x0A    # Read Display Power Mode (page 94)
+
+SLPIN     = 0x10
+SLPOUT    = 0x11
+PTLON     = 0x12
+NORON     = 0x13
+
+RDMADCTL  = 0x0B
+RDPIXFMT  = 0x0C
+RDIMGFMT  = 0x0D
+RDSELFDIAG = 0x0F
+
+INVOFF     = 0x20
+INVON      = 0x21
+GAMMASET   = 0x26
+DISPOFF    = 0x28
+DISPON     = 0x29
+
+CASET      = 0x2A
+PASET      = 0x2B
+RAMWR      = 0x2C
+RAMRD      = 0x2E
+
+PTLAR      = 0x30
+MADCTL     = 0x36
+PIXFMT     = 0x3A
+
+FRMCTR1    = 0xB1
+FRMCTR2    = 0xB2
+FRMCTR3    = 0xB3
+INVCTR     = 0xB4
+DFUNCTR    = 0xB6
+
+PWCTR1     = 0xC0
+PWCTR2     = 0xC1
+PWCTR3     = 0xC2
+PWCTR4     = 0xC3
+PWCTR5     = 0xC4
+VMCTR1     = 0xC5
+VMCTR2     = 0xC7
+
+RDID1      = 0xDA
+RDID2      = 0xDB
+RDID3      = 0xDC
+RDID4      = 0xDD
+
+GMCTRP1    = 0xE0
+GMCTRN1    = 0xE1
+#PWCTR6     =  0xFC
+
+spi = SPI(1, SPI.MASTER, baudrate=1, polarity=0, phase=1, firstbit=SPI.MSB)
+csx = Pin('X4', Pin.OUT_PP)
+dcx = Pin('X5', Pin.OUT_PP)
+
+def lcd_write(word, dc, recv=False):
     dcs = ['comm', 'data']
-    shift = 8 if len(bin(word)[2:]) <= 8 else 0
+    shift = 24 if len(bin(word)[2:]) <= 8 else 0
 
     if dc in dcs: DCX = dcs.index(dc)
     else: DCX = None
     csx.low()
-    spi.send(struct.pack('<H', DCX|(word<<shift)))
-    csx.high()
+    dcx.value(DCX)
+    if recv:
+        recv = bytearray(4)
+        data = spi.send_recv(struct.pack('<I', word<<shift), recv=recv, timeout=5000)
+        csx.high()
+        return struct.unpack('<H', data)[0]
+    else:
+        spi.send(word, timeout=5000)
+        csx.high()
 
 
-def lcd_write_comm(word):
-    lcd_write(word, 'comm')
+def lcd_write_comm(word, recv=False):
+    data = lcd_write(word, 'comm', recv)
+    return data
 
-def lcd_write_data(word):
-    lcd_write(word, 'data')
-
-def Lcd_Init():
-    pass
+def lcd_write_data(word, recv=False):
+    data = lcd_write(word, 'data', recv)
+    return data
 
 while True:
-    lcd_write_comm(0xB4)
-    lcd_write_data(0xB4)
+    lcd_write_comm(SWRESET)
+    print(lcd_write_comm(RDDID, recv=True))
+    lcd_write_data(0x01, recv=True)
