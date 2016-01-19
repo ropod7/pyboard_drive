@@ -2,9 +2,8 @@
 #    WORK IN PROGRESS
 #
 # main.py - controlling LCD ili9341
-# trying to connect by 3-Line method as shown in datasheet
-# where using | SDA | SCL | CSX | lines only
-# still have not hardware feedback
+# Gets data recieve by 4-wire Serial protocol (II),
+# where using D/CX wire pin for write Data/Command
 
 import struct
 
@@ -38,20 +37,28 @@ TFTWIDTH  = 240
 TFTHEIGHT = 320
 
 # LCD control registers
-SWRESET   = 0x01    # Software Reset (page 90)
-RDDID     = 0x04    # Read display identification information (page 91)
-RDDST     = 0x09    # Read Display Status (page 92)
-RDMODE    = 0x0A    # Read Display Power Mode (page 94)
+NOP        = 0x00
+SWRESET    = 0x01    # Software Reset (page 90)
+#     LCD Read status registers
+RDDID      = 0x04    # Read display identification 24-bit information (page 91)
+RDDST      = 0x09    # Read Display Status 32-bit (page 92)
+RDDPM      = 0x0A    # Read Display Power Mode 8-bit (page 94)
+RDDMADCTL  = 0x0B    # Read Display MADCTL 8-bit (page 95)
+RDPIXFMT   = 0x0C    # Read Display Pixel Format 8-bit (page 96)
+RDDIM      = 0x0D    # Read Display Image Format 3-bit (page 97)
+RDDSM      = 0x0E    # Read Display Signal Mode 8-bit (page 98)
+RDDSDR     = 0x0F    # Read Display Self-Diagnostic Result 8-bit (page 99)
 
-SLPIN     = 0x10
-SLPOUT    = 0x11
-PTLON     = 0x12
-NORON     = 0x13
+SLPIN      = 0x10    # Enter Sleep Mode (page 100)
 
-RDMADCTL  = 0x0B
-RDPIXFMT  = 0x0C
-RDIMGFMT  = 0x0D
-RDSELFDIAG = 0x0F
+RDID1      = 0xDA
+RDID2      = 0xDB
+RDID3      = 0xDC
+RDID4      = 0xDD
+
+SLPOUT     = 0x11
+PTLON      = 0x12
+NORON      = 0x13
 
 INVOFF     = 0x20
 INVON      = 0x21
@@ -82,46 +89,53 @@ PWCTR5     = 0xC4
 VMCTR1     = 0xC5
 VMCTR2     = 0xC7
 
-RDID1      = 0xDA
-RDID2      = 0xDB
-RDID3      = 0xDC
-RDID4      = 0xDD
-
 GMCTRP1    = 0xE0
 GMCTRN1    = 0xE1
 #PWCTR6     =  0xFC
 
-spi = SPI(1, SPI.MASTER, baudrate=1, polarity=0, phase=1, firstbit=SPI.MSB)
+spi = SPI(1, SPI.MASTER, baudrate=1, polarity=1, phase=1, firstbit=SPI.MSB)
 csx = Pin('X4', Pin.OUT_PP)
 dcx = Pin('X5', Pin.OUT_PP)
 
-def lcd_write(word, dc, recv=False):
-    dcs = ['comm', 'data']
-    shift = 24 if len(bin(word)[2:]) <= 8 else 0
+def lcd_write(word, dc, recv):
+    dcs = ['cmd', 'data']
+    wordlen = len(bin(word)[2:])
+    shift = 0
+
+    if wordlen < 16:
+        tp = '<H'
+        shift = 8
+    elif wordlen <= 24:
+        tp = '<I'
+        shift = 32-wordlen
 
     if dc in dcs: DCX = dcs.index(dc)
     else: DCX = None
+
     csx.low()
     dcx.value(DCX)
+    # realize data recieve logic
     if recv:
-        recv = bytearray(4)
-        data = spi.send_recv(struct.pack('<I', word<<shift), recv=recv, timeout=5000)
-        csx.high()
-        return struct.unpack('<H', data)[0]
+        recv = bytearray(6)
+        data = spi.send_recv(struct.pack('<HI', word), recv=recv)
+        # Try to check binary feedback data
+        print(struct.unpack('<HI', data))
     else:
-        spi.send(word, timeout=5000)
-        csx.high()
+        spi.send(struct.pack('<HI', word))
 
+    csx.high()
 
-def lcd_write_comm(word, recv=False):
-    data = lcd_write(word, 'comm', recv)
+def lcd_write_cmd(word=NOP, recv=None):
+    data = lcd_write(word, 'cmd', recv)
     return data
 
-def lcd_write_data(word, recv=False):
+def lcd_write_data(word=NOP, recv=None):
     data = lcd_write(word, 'data', recv)
     return data
 
+lcd_write_cmd(SWRESET)
+
 while True:
-    lcd_write_comm(SWRESET)
-    print(lcd_write_comm(RDDID, recv=True))
-    lcd_write_data(0x01, recv=True)
+    lcd_write_cmd(RDDPM, recv=True)
+    lcd_write_data(recv=True)
+
