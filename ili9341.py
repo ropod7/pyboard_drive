@@ -2,7 +2,7 @@
 #    WORK IN PROGRESS
 #
 # main.py - controlling LCD ili9341
-# Gets data recieve by 4-line Serial protocol (Series II)
+# Gets data transfer by 4-line Serial protocol (Series II)
 #
 
 import os
@@ -203,11 +203,6 @@ def lcd_test():
     for i in range(TFTHEIGHT//40):
         word = get_wordflow_4Xmono(colors[i], pixels)
         lcd_write_data(word)
-
-    for i in range(TFTHEIGHT//40-1, -1, -1):
-        word = get_wordflow_4Xmono(colors[i], pixels)
-        lcd_write_data(word)
-
 
 def lcd_random_test():
     colors = [
