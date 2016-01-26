@@ -4,7 +4,6 @@
 # main.py - controlling LCD ili9341
 # Gets data recieve by 4-line Serial protocol (Series II)
 #
-# TODO: Realize fast screen refresh
 
 import os
 import struct
@@ -14,7 +13,7 @@ from pyb import SPI, Pin
 
 micropython.alloc_emergency_exception_buf(100)
 
-rate = 168000000
+rate = 32000000
 
 spi = SPI(1, SPI.MASTER, baudrate=rate, polarity=1, phase=1)
 csx = Pin('X4', Pin.OUT_PP)    # CSX Pin
@@ -24,44 +23,24 @@ rst = Pin('X3', Pin.OUT_PP)    # Reset Pin
 
 # Color definitions.
 #     RGB 16-bit Color (R:5-bit; G:6-bit; B:5-bit)
-BLACK16       = [0,  0,  0 ]        #   0,   0,   0
-NAVY16        = [0,  0,  15]        #   0,   0, 128
-DARKGREEN16   = [0,  31, 0 ]        #   0, 128,   0
-DARKCYAN16    = [0,  31, 15]        #   0, 128, 128
-MAROON16      = [15, 0,  0 ]        # 128,   0,   0
-PURPLE16      = [15, 0,  15]        # 128,   0, 128
-OLIVE16       = [15, 31, 0 ]        # 128, 128,   0
-LIGHTGREY16   = [23, 47, 23]        # 192, 192, 192
-DARKGREY16    = [15, 31, 15]        # 128, 128, 128
-BLUE16        = [0,  0,  31]        #   0,   0, 255
-GREEN16       = [0,  63, 0 ]        #   0, 255,   0
-CYAN16        = [0,  63, 31]        #   0, 255, 255
-RED16         = [31, 0,  0 ]        # 255,   0,   0
-MAGENTA16     = [31, 0,  31]        # 255,   0, 255
-YELLOW16      = [31, 63, 0 ]        # 255, 255,   0
-WHITE16       = [31, 63, 31]        # 255, 255, 255
-ORANGE16      = [31, 39, 0 ]        # 255, 165,   0
-GREENYELLOW16 = [18, 63, 4 ]        # 173, 255,  47
-
-#     RGB 18-bit Color (R:6-bit; G:6-bit; B:6-bit)
-BLACK18       = [0,  0,  0 ]        #   0,   0,   0
-NAVY18        = [0,  0,  31]        #   0,   0, 128
-DARKGREEN18   = [0,  31, 0 ]        #   0, 128,   0
-DARKCYAN18    = [0,  31, 31]        #   0, 128, 128
-MAROON18      = [31, 0,  0 ]        # 128,   0,   0
-PURPLE18      = [31, 0,  31]        # 128,   0, 128
-OLIVE18       = [31, 31, 0 ]        # 128, 128,   0
-LIGHTGREY18   = [39, 47, 39]        # 192, 192, 192
-DARKGREY18    = [31, 31, 31]        # 128, 128, 128
-BLUE18        = [0,  0,  63]        #   0,   0, 255
-GREEN18       = [0,  63, 0 ]        #   0, 255,   0
-CYAN18        = [0,  63, 63]        #   0, 255, 255
-RED18         = [63, 0,  0 ]        # 255,   0,   0
-MAGENTA18     = [63, 0,  63]        # 255,   0, 255
-YELLOW18      = [63, 63, 0 ]        # 255, 255,   0
-WHITE18       = [63, 63, 63]        # 255, 255, 255
-ORANGE18      = [63, 39, 0 ]        # 255, 165,   0
-GREENYELLOW18 = [36, 63, 8 ]        # 173, 255,  47
+BLACK       = [0,  0,  0 ]        #   0,   0,   0
+NAVY        = [0,  0,  15]        #   0,   0, 128
+DARKGREEN   = [0,  31, 0 ]        #   0, 128,   0
+DARKCYAN    = [0,  31, 15]        #   0, 128, 128
+MAROON      = [15, 0,  0 ]        # 128,   0,   0
+PURPLE      = [15, 0,  15]        # 128,   0, 128
+OLIVE       = [15, 31, 0 ]        # 128, 128,   0
+LIGHTGREY   = [23, 47, 23]        # 192, 192, 192
+DARKGREY    = [15, 31, 15]        # 128, 128, 128
+BLUE        = [0,  0,  31]        #   0,   0, 255
+GREEN       = [0,  63, 0 ]        #   0, 255,   0
+CYAN        = [0,  63, 31]        #   0, 255, 255
+RED         = [31, 0,  0 ]        # 255,   0,   0
+MAGENTA     = [31, 0,  31]        # 255,   0, 255
+YELLOW      = [31, 63, 0 ]        # 255, 255,   0
+WHITE       = [31, 63, 31]        # 255, 255, 255
+ORANGE      = [31, 39, 0 ]        # 255, 165,   0
+GREENYELLOW = [18, 63, 4 ]        # 173, 255,  47
 
 TFTWIDTH  = 240
 TFTHEIGHT = 320
@@ -123,6 +102,41 @@ GMCTRP1    = 0xE0
 GMCTRN1    = 0xE1
 #PWCTR6     =  0xFC
 
+def lcd_write(word, dc, recv):
+    dcs = ['cmd', 'data']
+
+    DCX = dcs.index(dc) if dc in dcs else None
+
+    csx.low()
+    dcx.value(DCX)
+    if recv:
+        recv = bytearray(5)
+        data = spi.send_recv(struct.pack('<BI', word), recv=recv)
+    else:
+        spi.send(word)
+
+    csx.high()
+
+def lcd_write_cmd(word, recv=None):
+    data = lcd_write(word, 'cmd', recv)
+    return data
+
+def lcd_write_data(word):
+    lcd_write(word, 'data', recv=None)
+
+def lcd_set_window(x0, y0, x1, y1):
+    lcd_write_cmd(CASET)                # Column Address Set
+    lcd_write_data((x0>>8) & 0xFF)
+    lcd_write_data(x0 & 0xFF)
+    lcd_write_data((y0>>8) & 0xFF)
+    lcd_write_data(y0 & 0xFF)
+    lcd_write_cmd(PASET)                # Page Address Set
+    lcd_write_data((x1>>8) & 0xFF)
+    lcd_write_data(x1 & 0xFF)
+    lcd_write_data((y1>>8) & 0xFF)
+    lcd_write_data(y1 & 0xFF)
+    lcd_write_cmd(RAMWR)                # Memory Write
+
 def lcd_init():
     rst.high()              #
     pyb.delay(1)            #
@@ -136,16 +150,16 @@ def lcd_init():
     lcd_write_cmd(SWRESET)  # Reset SW
     pyb.delay(50)
     lcd_write_cmd(MADCTL)   # Memory Access Control
-    # | MY=0 | MX=0 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
+    # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=0 | MH=0 | 0 | 0 |
     lcd_write_data(0x48)
 
     lcd_write_cmd(PIXFMT)   # Pixel format set
-    lcd_write_data(0x66)    # 18-bit/pixel
-    #lcd_write_data(0x55)    # 16-bit/pixel
+    #lcd_write_data(0x66)    # 18-bit/pixel
+    lcd_write_data(0x55)    # 16-bit/pixel
 
     lcd_write_cmd(FRMCTR1)  # Frame rate control (in normal mode)
-    lcd_write_data(0x01)    # fosc/2
-    lcd_write_data(0x10)    # 112Hz (Default)
+    lcd_write_data(0x00)    # fosc/2
+    lcd_write_data(0x10)    # 112Hz
     #lcd_write_data(0x1B)    # 70Hz (Default)
 
     lcd_write_cmd(GAMMASET)
@@ -168,134 +182,97 @@ def lcd_init():
     pyb.delay(100)
     lcd_write_cmd(RAMWR)
 
+def get_wordflow_4Xmono(color, pixels):
+    R, G, B = color
+    fmt = '>{0}Q'.format(pixels)
+    pixel = (R<<11) | (G<<5) | B
+    colorflow = [pixel<<(16*3) | pixel<<(16*2) | pixel<<16 | pixel] * pixels
+
+    if pixels % 4:
+        mod = pixels % 4
+        fmt + '{0}'.format('H' * mod)
+        for i in range(mod):
+            colorflow.append(pixel)
+
+    word = struct.pack(fmt, *colorflow)
+    return word
+
 def lcd_test():
-    for y in range(TFTHEIGHT):
-        for x in range(TFTWIDTH):
-            if (y > 279): lcd_write_color18(WHITE18)
-            elif (y > 239): lcd_write_color18(PURPLE18)
-            elif (y > 199): lcd_write_color18(BLUE18)
-            elif (y > 159): lcd_write_color18(CYAN18)
-            elif (y > 119): lcd_write_color18(GREEN18)
-            elif (y > 79): lcd_write_color18(YELLOW18)
-            elif (y > 39): lcd_write_color18(ORANGE18)
-            else: lcd_write_color18(RED18)
+    colors = [RED, ORANGE, YELLOW, GREEN, CYAN, BLUE, PURPLE, WHITE]
+    pixels = TFTWIDTH*10
+    for i in range(TFTHEIGHT//40):
+        word = get_wordflow_4Xmono(colors[i], pixels)
+        lcd_write_data(word)
+
+    for i in range(TFTHEIGHT//40-1, -1, -1):
+        word = get_wordflow_4Xmono(colors[i], pixels)
+        lcd_write_data(word)
+
 
 def lcd_random_test():
     colors = [
-        BLACK18,    NAVY18,    DARKGREEN18,  DARKCYAN18,
-        MAROON18,   PURPLE18,  OLIVE18,      LIGHTGREY18,
-        DARKGREY18, BLUE18,    GREEN18,      CYAN18,
-        RED18,      MAGENTA18, YELLOW18,     WHITE18,
-        ORANGE18,   GREENYELLOW18
+        BLACK,    NAVY,    DARKGREEN,  DARKCYAN,
+        MAROON,   PURPLE,  OLIVE,      LIGHTGREY,
+        DARKGREY, BLUE,    GREEN,      CYAN,
+        RED,      MAGENTA, YELLOW,     WHITE,
+        ORANGE,   GREENYELLOW
         ]
-    screen = TFTWIDTH*5
+    pixels = TFTWIDTH*5
     j = 0
-    for i in range((320*240)/screen):
+    for i in range(TFTHEIGHT/20):
         j = struct.unpack('<B', os.urandom(1))[0]//15
-        lcd_draw_pixels(0, i*5, [colors[j] for c in range(screen)])
+        word = get_wordflow_4Xmono(colors[j], pixels)
+        lcd_write_data(word)
 
-def lcd_write(word, dc, recv):
-    dcs = ['cmd', 'data']
+def lcd_draw_Vline(x, y, length, color, width=1):
+    lcd_set_window(x, x+(width-1), y, length)
+    word = get_wordflow_4Xmono(color, length)
+    for i in range(width):
+        lcd_write_data(word)
 
-    DCX = dcs.index(dc) if dc in dcs else None
+def lcd_draw_Hline(x, y, length, color, width=1):
+    lcd_set_window(x, length, y, y+(width-1))
+    word = get_wordflow_4Xmono(color, length)
+    for i in range(width):
+        lcd_write_data(word)
 
-    csx.low()
-    dcx.value(DCX)
-    if recv:
-        recv = bytearray(5)
-        data = spi.send_recv(struct.pack('<BI', word), recv=recv)
+def lcd_draw_rect(x, y, width, height, color, border=1, fillcolor=None):
+    if border:
+        if border > height//2:
+            raise ValueError ("too high border value")
+            X, Y = x, y
+        for i in range(2):
+            Y = y+height-(border-1) if i == 1 else y
+            X = x if i == 1 else x
+            lcd_draw_Hline(X, Y, x+width, color, border)
+
+            Y = y+(border-1) if i == 1 else y
+            X = x+width-(border-1) if i == 1 else x
+            lcd_draw_Vline(X, Y, y+height, color, border)
     else:
-        spi.send(word)
+        fillcolor = color
 
-    csx.high()
+    if fillcolor:
+        xsum = x+border
+        ysum = y+border
+        lcd_set_window(xsum, xsum+width-(border*2), ysum, ysum+height-(border*2))
+        pixels = (width-(border*2))
+        word = get_wordflow_4Xmono(fillcolor, pixels)
+        x=0
+        rows = (height-(border*2)+width+border*2)//4
+        if rows < 1: rows = 1
+        while x < (rows):
+            lcd_write_data(word)
+            x+=1
 
-def lcd_write_color16(color):
-    R, G, B = color
-    csx.low()
-    dcx.high()
-    word = struct.pack('<BB', (R<<3) | (G>>3), (G<<5) | (B))
-    spi.send(word)
-    csx.high()
-    dcx.low()
+def lcd_fill_monocolor(color, margin=0):
+    lcd_draw_rect(margin, margin, TFTWIDTH, TFTHEIGHT, color, border=0, fillcolor=color)
 
-def lcd_write_color18(color):
-    R, G, B = color
-    csx.low()
-    dcx.high()
-    word = struct.pack('<BBB', (R<<2), (G<<2), (B<<2))
-    spi.send(word)
-    csx.high()
-    dcx.low()
-
-def lcd_write_cmd(word=NOP, recv=None):
-    data = lcd_write(word, 'cmd', recv)
-    return data
-
-def lcd_write_data(word):
-    lcd_write(word, 'data', recv=None)
-
-def lcd_set_window(x0, y0, x1, y1):
-    lcd_write_cmd(CASET)                # Column Address Set
-    lcd_write_data((x0>>8) & 0xFF)
-    lcd_write_data(x0 & 0xFF)
-    lcd_write_data((y0>>8) & 0xFF)
-    lcd_write_data(y0 & 0xFF)
-    lcd_write_cmd(PASET)                # Page Address Set
-    lcd_write_data((x1>>8) & 0xFF)
-    lcd_write_data(x1 & 0xFF)
-    lcd_write_data((y1>>8) & 0xFF)
-    lcd_write_data(y1 & 0xFF)
-    lcd_write_cmd(RAMWR)                # Memory Write
-
-def lcd_draw_pixel(x, y, color, rgb=18):
-    lcd_set_window(x, x, y, y)
-    if rgb == 18:
-        lcd_write_color18(color)
-    elif rgb == 16:
-        lcd_write_color16(color)
-
-def lcd_draw_pixels(x, y, data):
-    i = 0
-    lcd_set_window(x, TFTWIDTH-1, y, TFTHEIGHT-1)
-    while i < len(data):
-        lcd_write_color18(data[i])
-        i+=1
-
-def lcd_draw_Vline(x, y0, y1, color):
-    lcd_set_window(x, x, y0, y1)
-    for line in range(y1-y0):
-        lcd_write_color18(color)
-
-def lcd_draw_Hline(x, y, length, color):
-    i = 0
-    lcd_set_window(x, x+length, y, y)
-    while i < length:
-        lcd_write_color18(color)
-        i+=1
-
-def lcd_fill_screen(color, padding):
-    x = padding
-    lcd_set_window(padding, TFTWIDTH-padding, padding, TFTHEIGHT-padding)
-    while x < ((TFTWIDTH-padding)*(TFTHEIGHT-padding)):
-        lcd_write_color18(color)
-        x+=1
 
 # TEST CODE
+
 
 lcd_init()
 
 lcd_random_test()
-lcd_set_window(0, TFTWIDTH-0, 0, TFTHEIGHT-0)
 lcd_test()
-
-x0 = y0 = 10
-x1 = y1 = 310
-
-lcd_fill_screen(GREENYELLOW18, 10)
-
-lcd_draw_Vline(x0, y0, y1, BLACK18)
-lcd_draw_Vline(x0+220, y0, y1, BLACK18)
-lcd_draw_Vline(x0+219, y0, y1, BLACK18)
-lcd_draw_Hline(x0, y0, TFTWIDTH-20, BLACK18)
-lcd_draw_Hline(x0, y1, TFTWIDTH-20, BLACK18)
-lcd_draw_Hline(x0, y0+1, TFTWIDTH-20, BLACK18)
