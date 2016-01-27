@@ -1,12 +1,15 @@
 #
 #    WORK IN PROGRESS
 #
-# main.py - controlling LCD ili9341
-# Gets data transfer by 4-line Serial protocol (Series II)
+# main.py - controlling TFT LCD ILI9341
+# Data transfer using 4-line Serial protocol (Series II)
+# 16-bit RGB Color (R:5-bit; G:6-bit; B:5-bit)
+# About 30Hz monocolor screen refresh rate
 #
 
 import os
 import struct
+import math
 
 import pyb, micropython
 from pyb import SPI, Pin
@@ -150,7 +153,7 @@ def lcd_init():
     lcd_write_cmd(SWRESET)  # Reset SW
     pyb.delay(50)
     lcd_write_cmd(MADCTL)   # Memory Access Control
-    # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=0 | MH=0 | 0 | 0 |
+    # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
     lcd_write_data(0x48)
 
     lcd_write_cmd(PIXFMT)   # Pixel format set
@@ -158,9 +161,9 @@ def lcd_init():
     lcd_write_data(0x55)    # 16-bit/pixel
 
     lcd_write_cmd(FRMCTR1)  # Frame rate control (in normal mode)
-    lcd_write_data(0x00)    # fosc/2
-    lcd_write_data(0x10)    # 112Hz
-    #lcd_write_data(0x1B)    # 70Hz (Default)
+    lcd_write_data(0x00)    # fosc
+    #lcd_write_data(0x10)    # 112Hz
+    lcd_write_data(0x1B)    # 70Hz (Default)
 
     lcd_write_cmd(GAMMASET)
     lcd_write_data(0x01)
@@ -182,26 +185,20 @@ def lcd_init():
     pyb.delay(100)
     lcd_write_cmd(RAMWR)
 
-def get_wordflow_4Xmono(color, pixels):
+def get_Npix_monoword(color, pixels=4):
     R, G, B = color
-    fmt = '>{0}Q'.format(pixels)
+    fmt = '>Q' if pixels == 4 else '>H'
     pixel = (R<<11) | (G<<5) | B
-    colorflow = [pixel<<(16*3) | pixel<<(16*2) | pixel<<16 | pixel] * pixels
+    monocolor = pixel<<(16*3) | pixel<<(16*2) | pixel<<16 | pixel
 
-    if pixels % 4:
-        mod = pixels % 4
-        fmt + '{0}'.format('H' * mod)
-        for i in range(mod):
-            colorflow.append(pixel)
-
-    word = struct.pack(fmt, *colorflow)
+    word = struct.pack(fmt, monocolor)
     return word
 
 def lcd_test():
     colors = [RED, ORANGE, YELLOW, GREEN, CYAN, BLUE, PURPLE, WHITE]
-    pixels = TFTWIDTH*10
+    pixels = 10 * TFTWIDTH
     for i in range(TFTHEIGHT//40):
-        word = get_wordflow_4Xmono(colors[i], pixels)
+        word = get_Npix_monoword(colors[i]) * pixels
         lcd_write_data(word)
 
 def lcd_random_test():
@@ -212,33 +209,42 @@ def lcd_random_test():
         RED,      MAGENTA, YELLOW,     WHITE,
         ORANGE,   GREENYELLOW
         ]
-    pixels = TFTWIDTH*5
+    pixels = TFTWIDTH
     j = 0
-    for i in range(TFTHEIGHT/20):
+    for i in range(TFTHEIGHT//4):
         j = struct.unpack('<B', os.urandom(1))[0]//15
-        word = get_wordflow_4Xmono(colors[j], pixels)
+        word = get_Npix_monoword(colors[j]) * pixels
         lcd_write_data(word)
+
+def lcd_draw_pixel(x, y, color):
+    lcd_set_window(x, x+1, y, y+1)
+    lcd_write_data(get_Npix_monoword(color))
 
 def lcd_draw_Vline(x, y, length, color, width=1):
+    if length > 320: length = 320
+    if width > 10: width = 10
     lcd_set_window(x, x+(width-1), y, length)
-    word = get_wordflow_4Xmono(color, length)
-    for i in range(width):
-        lcd_write_data(word)
+    pixels = width * length
+    word = get_Npix_monoword(color) * pixels
+    lcd_write_data(word)
 
 def lcd_draw_Hline(x, y, length, color, width=1):
+    if length > 240: length = 240
+    if width > 10: width = 10
     lcd_set_window(x, length, y, y+(width-1))
-    word = get_wordflow_4Xmono(color, length)
-    for i in range(width):
-        lcd_write_data(word)
+    pixels = width * length
+    word = get_Npix_monoword(color) * pixels
+    lcd_write_data(word)
 
 def lcd_draw_rect(x, y, width, height, color, border=1, fillcolor=None):
+    if width > 240: width = 240
+    if height > 320: height = 320
     if border:
-        if border > height//2:
-            raise ValueError ("too high border value")
-            X, Y = x, y
+        if border > width//2:
+            border = width//2-1
+        X, Y = x, y
         for i in range(2):
             Y = y+height-(border-1) if i == 1 else y
-            X = x if i == 1 else x
             lcd_draw_Hline(X, Y, x+width, color, border)
 
             Y = y+(border-1) if i == 1 else y
@@ -250,24 +256,36 @@ def lcd_draw_rect(x, y, width, height, color, border=1, fillcolor=None):
     if fillcolor:
         xsum = x+border
         ysum = y+border
-        lcd_set_window(xsum, xsum+width-(border*2), ysum, ysum+height-(border*2))
-        pixels = (width-(border*2))
-        word = get_wordflow_4Xmono(fillcolor, pixels)
-        x=0
-        rows = (height-(border*2)+width+border*2)//4
+        dborder = border*2
+        lcd_set_window(xsum, xsum+width-dborder, ysum, ysum+height-dborder)
+        pixels = (width-dborder)*8
+        rows   = (height>>5)+border+width
+
+        word = get_Npix_monoword(fillcolor)*pixels
         if rows < 1: rows = 1
-        while x < (rows):
+        i=0
+        while i < (rows):
             lcd_write_data(word)
-            x+=1
+            i+=1
+
+# TODO: optimize function speed
+def lcd_draw_circle(x, y, radius, color):
+    for i in range(360):
+        sin = math.sin(math.radians(i))
+        cos = math.cos(math.radians(i))
+        lcd_draw_pixel(int(x+(radius*sin)), int(y-(radius*cos)), color)
+
+def lcd_draw_oval(x, y, xradius, yradius, color):
+    pass
 
 def lcd_fill_monocolor(color, margin=0):
-    lcd_draw_rect(margin, margin, TFTWIDTH, TFTHEIGHT, color, border=0, fillcolor=color)
+    lcd_draw_rect(margin, margin, TFTWIDTH, TFTHEIGHT, color, border=0)
 
-
-# TEST CODE
-
-
+# TEST CODE:
 lcd_init()
 
-lcd_random_test()
 lcd_test()
+
+radius = 100
+for i in range(radius):
+    lcd_draw_circle(TFTWIDTH//2, TFTHEIGHT//2, radius-i, BLACK)
