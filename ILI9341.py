@@ -4,7 +4,10 @@
 # main.py - controlling TFT LCD ILI9341
 # Data transfer using 4-line Serial protocol (Series II)
 # 16-bit RGB Color (R:5-bit; G:6-bit; B:5-bit)
-# About 30Hz monocolor screen refresh rate
+# About 30Hz monocolor screen refresh
+#
+#   Trying to realize VSYNC control. Gets screen response by this method.
+#   Need calculations for data transfer to GRAM (Graphics RAM).
 #
 
 import os
@@ -87,10 +90,12 @@ PTLAR      = 0x30
 MADCTL     = 0x36
 PIXFMT     = 0x3A
 
+IFMODE     = 0xB0    # RGB Interface control (page 154)
 FRMCTR1    = 0xB1
 FRMCTR2    = 0xB2
 FRMCTR3    = 0xB3
-INVCTR     = 0xB4
+INVCTR     = 0xB4    # Frame Inversion control (page 161)
+PRCTR      = 0xB5    # Blanking porch control (page 162) VFP, VBP, HFP, HBP
 DFUNCTR    = 0xB6
 
 PWCTR1     = 0xC0
@@ -104,6 +109,8 @@ VMCTR2     = 0xC7
 GMCTRP1    = 0xE0
 GMCTRN1    = 0xE1
 #PWCTR6     =  0xFC
+
+IFCTL      = 0xF6
 
 def lcd_write(word, dc, recv):
     dcs = ['cmd', 'data']
@@ -156,14 +163,35 @@ def lcd_init():
     # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
     lcd_write_data(0x48)
 
+    lcd_write_cmd(PTLON)    # Partial mode ON
+
     lcd_write_cmd(PIXFMT)   # Pixel format set
     #lcd_write_data(0x66)    # 18-bit/pixel
     lcd_write_data(0x55)    # 16-bit/pixel
 
     lcd_write_cmd(FRMCTR1)  # Frame rate control (in normal mode)
-    lcd_write_data(0x00)    # fosc
+    lcd_write_data(0x00)    # DIV[1:0] (x 1/1)
     #lcd_write_data(0x10)    # 112Hz
     lcd_write_data(0x1B)    # 70Hz (Default)
+    #lcd_write_data(16)
+
+    lcd_write_cmd(DFUNCTR)  # Display function control
+    lcd_write_data(0x0A)
+    lcd_write_data(0x82)
+    lcd_write_data(0x27)
+    lcd_write_data(0x04)    # 10 DOTCLK
+
+    lcd_write_cmd(PRCTR)
+    lcd_write_data(0x7F)    # VFP = 2 lines
+    lcd_write_data(0x7F)    # VBP = 2 lines
+    lcd_write_data(0x14)    # HFP = 2 lines
+    lcd_write_data(0x0A)    # HBP = 2 lines
+
+    #lcd_write_data(INVCTR)  # Frame Inversion control
+    #lcd_write_data(0x27)    # NL = 320 lines
+
+    lcd_write_cmd(IFMODE)    # RGB Interface Signal Control
+    lcd_write_data(0xE0)     # SYNC mode RCM[1:0] = "11"
 
     lcd_write_cmd(GAMMASET)
     lcd_write_data(0x01)
@@ -171,18 +199,21 @@ def lcd_init():
     lcd_write_cmd(0xb7)     # Entry mode set
     lcd_write_data(0x07)
 
-    lcd_write_cmd(PTLON)    # Partial mode ON
-
-    #lcd_write_cmd(DFUNCTR)  # Display function control
-    #lcd_write_data(0x0a)
-    #lcd_write_data(0x82)
-    #lcd_write_data(0x27)
-    #lcd_write_data(0x00)
-
-    lcd_write_cmd(SLPOUT)    # sleep mode OFF
+    lcd_write_cmd(SLPOUT)   # sleep mode OFF
     pyb.delay(100)
     lcd_write_cmd(LCDON)
     pyb.delay(100)
+
+    # If Controlling by VSYNC:
+    #lcd_set_window(0, 0, TFTWIDTH, TFTHEIGHT)
+    lcd_write_cmd(RAMWR)
+    lcd_write_data(0x01)
+    lcd_write_cmd(IFCTL)    # Interface Control
+    lcd_write_data(0x01)
+    lcd_write_data(0x00)
+    #lcd_write_data(0x06)    # DM[1:0] = "01" and RM = 1 is RGB mode (default)
+    lcd_write_data(0x08)    # DM[1:0] = "10" VSYNC mode
+
     lcd_write_cmd(RAMWR)
 
 def get_Npix_monoword(color, pixels=4):
@@ -225,6 +256,7 @@ def lcd_draw_Vline(x, y, length, color, width=1):
     if width > 10: width = 10
     lcd_set_window(x, x+(width-1), y, length)
     pixels = width * length
+    pixels = pixels//4 if pixels >= 4 else pixels
     word = get_Npix_monoword(color) * pixels
     lcd_write_data(word)
 
@@ -233,6 +265,7 @@ def lcd_draw_Hline(x, y, length, color, width=1):
     if width > 10: width = 10
     lcd_set_window(x, length, y, y+(width-1))
     pixels = width * length
+    pixels = pixels//4 if pixels >= 4 else pixels
     word = get_Npix_monoword(color) * pixels
     lcd_write_data(word)
 
@@ -261,31 +294,65 @@ def lcd_draw_rect(x, y, width, height, color, border=1, fillcolor=None):
         pixels = (width-dborder)*8
         rows   = (height>>5)+border+width
 
-        word = get_Npix_monoword(fillcolor)*pixels
-        if rows < 1: rows = 1
+        if rows < 1:
+            rows = 1
+            word = get_Npix_monoword(fillcolor) * (pixels//4)
+        else:
+            word = get_Npix_monoword(fillcolor) * pixels
+
         i=0
         while i < (rows):
             lcd_write_data(word)
             i+=1
 
-# TODO: optimize function speed
-def lcd_draw_circle(x, y, radius, color):
-    for i in range(360):
-        sin = math.sin(math.radians(i))
-        cos = math.cos(math.radians(i))
-        lcd_draw_pixel(int(x+(radius*sin)), int(y-(radius*cos)), color)
+def get_x_circular_point(x, degrees, radius):
+    sin = math.sin(math.radians(degrees))
+    x = int(x+(radius*sin))
+    return x
+
+def get_y_circular_point(y, degrees, radius):
+    cos = math.cos(math.radians(degrees))
+    y = int(y-(radius*cos))
+    return y
+
+def lcd_draw_circle(x, y, radius, color, border=2):
+    for j in range(2):
+        R = radius-border*j
+        if j == 1: color = RED
+        tempY = 0
+        for i in range(180):
+            xNeg = get_x_circular_point(x, 360-i, R)
+            xPos = get_x_circular_point(x, i, R)
+            Y    = get_y_circular_point(y, i, R)
+            if i > 89: Y = Y-1
+            if tempY != Y and tempY > 0:
+                length = (xPos+1)
+                lcd_draw_Hline(xNeg, Y, length, color, width=2)
+            tempY = Y
 
 def lcd_draw_oval(x, y, xradius, yradius, color):
-    pass
+    tempY = 0
+    for i in range(180):
+        xNeg = get_x_circular_point(x, 360-i, xradius)
+        xPos = get_x_circular_point(x, i, xradius)
+        Y    = get_y_circular_point(y, i, yradius)
+
+        if i > 89: Y = Y-1
+        if tempY != Y and tempY > 0:
+            length = (xPos+1)
+            lcd_draw_Hline(xNeg, Y, length, color, width=2)
+        tempY = Y
 
 def lcd_fill_monocolor(color, margin=0):
     lcd_draw_rect(margin, margin, TFTWIDTH, TFTHEIGHT, color, border=0)
 
-# TEST CODE:
+
+# TEST CODE
+
+
 lcd_init()
 
-lcd_test()
+#lcd_fill_monocolor(RED)
 
-radius = 100
-for i in range(radius):
-    lcd_draw_circle(TFTWIDTH//2, TFTHEIGHT//2, radius-i, BLACK)
+lcd_draw_circle(TFTWIDTH//2, TFTHEIGHT//2, 80, BLACK, border=5)
+lcd_draw_oval(100, 50, 20, 30, RED)
