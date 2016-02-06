@@ -18,11 +18,10 @@ micropython.alloc_emergency_exception_buf(100)
 
 rate = 42000000
 
-spi = SPI(1, SPI.MASTER, baudrate=rate, polarity=1, phase=1)
+spi = SPI(1, SPI.MASTER, baudrate=rate, polarity=1, phase=1, bits=8)
 csx = Pin('X4', Pin.OUT_PP)    # CSX Pin
 dcx = Pin('X5', Pin.OUT_PP)    # D/Cx Pin
 rst = Pin('X3', Pin.OUT_PP)    # Reset Pin
-
 
 # Color definitions.
 #     RGB 16-bit Color (R:5-bit; G:6-bit; B:5-bit)
@@ -69,7 +68,7 @@ SLPIN      = 0x10    # Enter Sleep Mode (page 100)
 SLPOUT     = 0x11    # Sleep Out (page 101)
 
 PTLON      = 0x12    # Partial Mode ON (page 103)
-NORON      = 0x13    # Partial Mode OFF
+NORON      = 0x13    # Partial Mode OFF, Normal Display mode ON
 
 INVOFF     = 0x20
 INVON      = 0x21
@@ -88,9 +87,9 @@ MADCTL     = 0x36
 PIXFMT     = 0x3A    # Pixel Format Set
 
 IFMODE     = 0xB0    # RGB Interface control (page 154)
-FRMCTR1    = 0xB1
-FRMCTR2    = 0xB2
-FRMCTR3    = 0xB3
+FRMCTR1    = 0xB1    # Frame rate control (in normal mode)
+FRMCTR2    = 0xB2    # Frame rate control (in idle mode)
+FRMCTR3    = 0xB3    # Frame rate control (in partial mode)
 INVCTR     = 0xB4    # Frame Inversion control (page 161)
 PRCTR      = 0xB5    # Blanking porch control (page 162) VFP, VBP, HFP, HBP
 DFUNCTR    = 0xB6
@@ -119,7 +118,7 @@ def lcd_write(word, dc, recv, recvsize=2):
     dcs = ['cmd', 'data']
 
     DCX = dcs.index(dc) if dc in dcs else None
-    fmt = '<B{0}'.format('B' * recvsize)
+    fmt = '>B{0}'.format('B' * recvsize)
     csx.low()
     dcx.value(DCX)
     if recv:
@@ -142,7 +141,7 @@ def lcd_write_data(word):
 def lcd_write_words(words):
     wordL = len(words)
     wordL = wordL if wordL > 1 else ""
-    fmt = '>{0}B'.format(len(words))
+    fmt = '>{0}B'.format(wordL)
 
     words = struct.pack(fmt, *words)
     lcd_write_data(words)
@@ -157,7 +156,7 @@ def lcd_set_window(x0, y0, x1, y1):
     # Memory Write
     lcd_write_cmd(RAMWR)
 
-def lcd_init(VSYNC=False):
+def lcd_init():
     lcd_reset()
 
     lcd_write_cmd(LCDOFF)   # Display OFF
@@ -176,8 +175,8 @@ def lcd_init(VSYNC=False):
     lcd_write_data(0x55)    # 16-bit/pixel
 
     ##############################################################
-    lcd_VSYNC_deinit()
-    ###########################################################
+    #lcd_VSYNC_deinit()
+    ##############################################################
 
     lcd_write_cmd(GAMMASET)
     lcd_write_data(0x01)
@@ -192,12 +191,13 @@ def lcd_init(VSYNC=False):
 
     lcd_write_cmd(RAMWR)
 
+# Initializing VSYNC
 def lcd_VSYNC_init():
-    lcd_write_cmd(IFMODE)   # RGB Interface control
-    lcd_write_data(0x60)    # RCM[1:0] = "11" SYNC mode
+    #pass
+    lcd_write_cmd(NORON)    # Normal mode ON
 
-    lcd_write_cmd(FRMCTR1)  # Frame rate control (in normal mode)
-    lcd_write_words([0x00, 0x10])
+    lcd_write_cmd(FRMCTR3)  # Frame rate control (in partial mode)
+    lcd_write_words([0x00, 0x1B])
     #                0x00          DIV[1:0] (x 1/1)
     #                      0x10    112Hz
     #                      0x1B    70Hz (Default)
@@ -205,41 +205,49 @@ def lcd_VSYNC_init():
     lcd_write_cmd(DFUNCTR)  # Display function control
     lcd_write_words([0x0A, 0x80, 0x27, 0x3F])
     #                      0x80                REV = "1" norm. white, ISC[3:0] = "0000" Scan cicle 17ms.
+    #                            0x27          320 lines
+    #                            0x03          32  lines
     #                                  0x3F    63 CLK
 
-    #lcd_write_cmd(PRCTR)
-    #lcd_write_words([0x72, 0x72, 0x10, 0x18])
+    lcd_write_cmd(PRCTR)
+    lcd_write_words([0x72, 0x72, 0x10, 0x18])
     #                0x72                      VFP = 114 lines
     #                      0x72                VBP = 114 lines
     #                            0x10          HFP = 16 CLK
     #                                  0x18    HBP = 24 CLK
 
-    lcd_write_data(INVCTR)  # Frame Inversion control
-    lcd_write_data(0x27)    # NL = 320 lines
-
     lcd_write_cmd(IFMODE)    # RGB Interface Signal Control
     lcd_write_data(0xE0)     # SYNC mode RCM[1:0] = "11"
+    pyb.delay(16)
 
 def lcd_VSYNC_start():
     # Set GRAM Address:
-    lcd_set_window(0, 0, TFTWIDTH, TFTHEIGHT)
+    #lcd_set_window(0, 100, 240, 108)
+    #lcd_set_window(0, 0, 240, 320)
 
     # Interface Control:
     lcd_write_cmd(IFCTL)
     lcd_write_words([0x01, 0x00, 0x08])
     #                            0x08    DM[1:0] = "10" VSYNC mode
 
+    pyb.delay(16)
+
     lcd_write_cmd(RAMWR)
 
+# useless function
 def lcd_VSYNC_deinit():
+    lcd_write_cmd(IFMODE)   # RGB Interface control
+    lcd_write_data(0x80)    # RCM[1:0] = "10" DE mode
+
     lcd_write_cmd(PTLON)    # Partial mode ON
-    lcd_write_cmd(FRMCTR1)  # Frame rate control (in normal mode)
-    lcd_write_words([0x00, 0x1b])
+
+    #lcd_write_cmd(FRMCTR3)  # Frame rate control (in partial mode)
+    #lcd_write_words([0x00, 0x1b])
     #                0x00          DIV[1:0] (x 1/1)
     #                      0x1B    70Hz (Default)
 
-    lcd_write_cmd(DFUNCTR)  # Display function control
-    lcd_write_words([0x0A, 0x80, 0x27, 0x00])
+    #lcd_write_cmd(DFUNCTR)  # Display function control
+    #lcd_write_words([0x0A, 0x80, 0x27, 0x00])
     #                      0x80                REV = "1" norm. white, ISC[3:0] = "0000" Scan cicle 17ms.
 
     lcd_write_cmd(PRCTR)
@@ -249,14 +257,10 @@ def lcd_VSYNC_deinit():
     #                            0x0A          HFP = 10 CLK
     #                                  0x14    HBP = 20 CLK
 
-    lcd_write_cmd(PTLON)    # Partial mode ON
-
     lcd_write_cmd(IFCTL)    # Interface Control
     lcd_write_words([0x01, 0x00, 0x00])
     #                            0x00     DM[1:0] = "00" and RM = 0 is System interface mode
-    pyb.delay(4)
-    lcd_write_cmd(IFMODE)   # RGB Interface control
-    lcd_write_data(0x80)    # RCM[1:0] = "10" DE mode
+    pyb.delay(16)
 
 def get_Npix_monoword(color, pixels=4):
     R, G, B = color
@@ -294,7 +298,7 @@ def lcd_draw_pixel(x, y, color):
     lcd_write_data(get_Npix_monoword(color))
 
 def lcd_draw_Vline(x, y, length, color, width=1):
-    if length > 320: length = 320
+    if length > TFTHEIGHT: length = TFTHEIGHT
     if width > 10: width = 10
     lcd_set_window(x, x+(width-1), y, length)
     pixels = width * length
@@ -303,7 +307,7 @@ def lcd_draw_Vline(x, y, length, color, width=1):
     lcd_write_data(word)
 
 def lcd_draw_Hline(x, y, length, color, width=1):
-    if length > 240: length = 240
+    if length > TFTWIDTH: length = TFTWIDTH
     if width > 10: width = 10
     lcd_set_window(x, length, y, y+(width-1))
     pixels = width * length
@@ -312,8 +316,8 @@ def lcd_draw_Hline(x, y, length, color, width=1):
     lcd_write_data(word)
 
 def lcd_draw_rect(x, y, width, height, color, border=1, fillcolor=None):
-    if width > 240: width = 240
-    if height > 320: height = 320
+    if width > TFTWIDTH: width = TFTWIDTH
+    if height > TFTHEIGHT: height = TFTHEIGHT
     if border:
         if border > width//2:
             border = width//2-1
@@ -360,21 +364,31 @@ def get_y_perimeter_point(y, degrees, radius):
     y = int(y-(radius*cos))
     return y
 
-def lcd_draw_circle(x, y, radius, color, border=2):
-    for j in range(2):
-        R = radius-border*j
-        if j == 1: color = RED
-        tempY = 0
-        for i in range(180):
-            xNeg = get_x_perimeter_point(x, 360-i, R)
-            xPos = get_x_perimeter_point(x, i, R)
-            Y    = get_y_perimeter_point(y, i, R)
-            if i > 89: Y = Y-1
-            if i == 90: xPos = xPos-1
-            if tempY != Y and tempY > 0:
-                length = xPos+1
-                lcd_draw_Hline(xNeg, Y, length, color, width=2)
-            tempY = Y
+def lcd_draw_circle_filled(x, y, radius, color, border=2):
+    tempY = 0
+    for i in range(180):
+        xNeg = get_x_perimeter_point(x, 360-i, radius)
+        xPos = get_x_perimeter_point(x, i, radius)
+        Y    = get_y_perimeter_point(y, i, radius)
+        if i > 89: Y = Y-1
+        if i == 90: xPos = xPos-1
+        if tempY != Y and tempY > 0:
+            length = xPos+1
+            lcd_draw_Hline(xNeg, Y, length, color, width=2)
+        tempY = Y
+
+def lcd_draw_circle(x, y, radius, color, border=1):
+    width = height = border
+    for i in range(360):
+        X = get_x_perimeter_point(x, i, radius)
+        Y = get_y_perimeter_point(y, i, radius)
+        if i == 90: X = X-1
+        elif i == 180: Y = Y-1
+        #if i < 180:
+            #X = X-border
+        #else:
+            #Y = Y-border
+        lcd_draw_rect(X, Y, width, height, color, border=0)
 
 def lcd_draw_oval(x, y, xradius, yradius, color):
     tempY = 0
@@ -389,16 +403,24 @@ def lcd_draw_oval(x, y, xradius, yradius, color):
             lcd_draw_Hline(xNeg, Y, length, color, width=2)
         tempY = Y
 
+# useless function
+def lcd_pack_VSYNC_data(color):
+    lcd_VSYNC_deinit()
+    page = get_Npix_monoword(color)*60*32
+    DOTCLK = get_Npix_monoword(BLACK)*120
+    lcd_VSYNC_init()
+    lcd_VSYNC_start()
+    lcd_write_data(page+DOTCLK)
+
+
+# Read display signal mode
+def lcd_get_RDDSM():
+    data = lcd_write_cmd(RDDSM, recv=True)
+    data = bin(struct.unpack('>BBB', data)[1]), bin(struct.unpack('>BBB', data)[2])
+    print(data)
 
 # TEST CODE
 
 lcd_init()
 
 lcd_fill_monocolor(GREEN)
-lcd_fill_monocolor(BLUE)
-
-lcd_draw_circle(TFTWIDTH//2, TFTHEIGHT//2, 80, BLACK, border=5)
-lcd_VSYNC_init()
-lcd_draw_oval(100, 50, 20, 30, RED)
-
-#lcd_VSYNC_start()
