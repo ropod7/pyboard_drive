@@ -26,10 +26,10 @@ rst = Pin('X3', Pin.OUT_PP)    # Reset Pin
 # Fonts definitions:
 Arial_14 = dict(
     size   = [0x1E, 0x6C], # size
-    width  = [0x0D], # width
-    height = [0x0E], # height
-    fchar  = [0x20], # first char
-    chcnt  = [0x60], # char count
+    width  = 0x0D, # width
+    height = 0x0E, # height
+    fchar  = 0x20, # first char
+    chcnt  = 0x60, # char count
 
     # font data
     ch32 = [0x02, [0x00, 0x00, 0x00, 0x00]],             # <space> 0x20
@@ -457,8 +457,6 @@ def lcd_init():
 
     lcd_write_cmd(RAMWR)
 
-# TODO: Каким образом выводятся данные на экран из памяти при инициализации.
-# Найти причину
 def lcd_VSYNC_init():
     #pass
     lcd_write_cmd(NORON)    # Normal mode ON
@@ -501,6 +499,7 @@ def lcd_VSYNC_start():
 
     lcd_write_cmd(RAMWR)
 
+# useless function
 def lcd_VSYNC_deinit():
     lcd_write_cmd(IFMODE)   # RGB Interface control
     lcd_write_data(0x80)    # RCM[1:0] = "10" DE mode
@@ -532,7 +531,12 @@ def get_Npix_monoword(color, pixels=4):
     R, G, B = color
     fmt = '>Q' if pixels == 4 else '>H'
     pixel = (R<<11) | (G<<5) | B
-    monocolor = pixel<<(16*3) | pixel<<(16*2) | pixel<<16 | pixel
+    if pixels == 4:
+        monocolor = pixel<<(16*3) | pixel<<(16*2) | pixel<<16 | pixel
+    elif pixels == 1:
+        monocolor = pixel
+    else:
+        raise ValueError("Pixels count must be 1 or 4")
 
     word = struct.pack(fmt, monocolor)
     return word
@@ -669,6 +673,7 @@ def lcd_draw_oval(x, y, xradius, yradius, color):
             lcd_draw_Hline(xNeg, Y, length, color, width=2)
         tempY = Y
 
+# useless function
 def lcd_pack_VSYNC_data(color):
     lcd_VSYNC_deinit()
     page = get_Npix_monoword(color)*60*32
@@ -677,26 +682,68 @@ def lcd_pack_VSYNC_data(color):
     lcd_VSYNC_start()
     lcd_write_data(page+DOTCLK)
 
-
 # Read display signal mode
 def lcd_get_RDDSM():
     data = lcd_write_cmd(RDDSM, recv=True)
     data = bin(struct.unpack('>BBB', data)[1]), bin(struct.unpack('>BBB', data)[2])
     print(data)
+    
+# TODO:
+# 0. Need to be optimized
+# 1. Check logics for '}', '{' and others
+# 2. Set right orientation.
+def lcd_fill_bicolor(data, x, y, width, height, color, bgcolor=BLACK):
+    lcd_set_window(x, x+7, y, y+width-1)
+    print(height, width)
+    words = bytearray(0)
+    i = 1
+    for w in data:
+        word = bin(w)[2:]
+        lw = len(word)
+        if i > width:
+            lcd_write_data(words)
+            lcd_set_window(x+(8-height+2), x-1, y, y+width-1)
+            if lw == 1 and word == '0':
+                word = '0'*(height-8-2)
+            elif lw < height-8:
+                word = '0'*(height-8-lw)+word[:-2]
+            else:
+                word = word[:-2]
+        else:
+            if lw < 8:
+                word = '0'*(8-lw)+word
+        print(word)
+        for io in word:
+            if io == '0':
+                pixel = get_Npix_monoword(bgcolor, pixels=1)
+            else:
+                pixel = get_Npix_monoword(color, pixels=1)
+            words += pixel
+        i+=1
+
+    lcd_write_data(words)
+
+def lcd_print_char(char, x, y, color, font=Arial_14, bgcolor=BLACK):
+    index = 'ch' + str(ord(char))
+    datawidth = font[index][0]
+    width  = font['width']
+    height = font['height']
+    data  = font[index][1]
+    lcd_fill_bicolor(data, x, y, datawidth, height, color, bgcolor)
+
 
 # TEST CODE
 
 lcd_init()
 
-lcd_fill_monocolor(GREEN)
 lcd_fill_monocolor(BLUE)
 
-lcd_draw_circle_filled(TFTWIDTH//2, TFTHEIGHT//2, 80, BLACK)
+#lcd_draw_circle_filled(TFTWIDTH//2, TFTHEIGHT//2, 80, BLACK)
 
 lcd_draw_oval(100, 50, 20, 30, RED)
 
 lcd_draw_circle_filled(TFTWIDTH//2, 25, 20, GREEN)
 
+lcd_draw_circle(TFTWIDTH//2, 279, 39, LIGHTGREY, border=5)
 
-lcd_draw_circle(TFTWIDTH//2, 279, 39, LIGHTGREY, border=1)
-
+lcd_print_char('}', 20, 40, BLACK, bgcolor=BLUE)
