@@ -359,6 +359,7 @@ FRMCTR3    = 0xB3    # Frame rate control (in partial mode)
 INVCTR     = 0xB4    # Frame Inversion control (page 161)
 PRCTR      = 0xB5    # Blanking porch control (page 162) VFP, VBP, HFP, HBP
 DFUNCTR    = 0xB6
+ETMOD      = 0xB7    # Entry mode set (page 168)
 
 PWCTR1     = 0xC0
 PWCTR2     = 0xC1
@@ -447,7 +448,7 @@ def lcd_init():
     lcd_write_cmd(GAMMASET)
     lcd_write_data(0x01)
 
-    lcd_write_cmd(0xb7)     # Entry mode set
+    lcd_write_cmd(ETMOD)    # Entry mode set
     lcd_write_data(0x07)
 
     lcd_write_cmd(SLPOUT)   # sleep mode OFF
@@ -610,16 +611,15 @@ def lcd_draw_rect(x, y, width, height, color, border=1, fillcolor=None):
         pixels = (width-dborder)*8+border+width
         rows   = (height>>5)
 
-        if rows < 1:
-            rows = 1
-            word = get_Npix_monoword(fillcolor) * (pixels//4)
-        else:
-            word = get_Npix_monoword(fillcolor) * pixels
+        word = get_Npix_monoword(fillcolor) * pixels
 
-        i=0
-        while i < (rows):
+        if rows < 1:
             lcd_write_data(word)
-            i+=1
+        else:
+            i=0
+            while i < (rows):
+                lcd_write_data(word)
+                i+=1
 
 def lcd_fill_monocolor(color, margin=0):
     lcd_draw_rect(margin, margin, TFTWIDTH, TFTHEIGHT, color, border=0)
@@ -654,10 +654,6 @@ def lcd_draw_circle(x, y, radius, color, border=1):
         Y = get_y_perimeter_point(y, i, radius)
         if i == 90: X = X-1
         elif i == 180: Y = Y-1
-        #if i < 180:
-            #X = X-border
-        #else:
-            #Y = Y-border
         lcd_draw_rect(X, Y, width, height, color, border=0)
 
 def lcd_draw_oval(x, y, xradius, yradius, color):
@@ -687,63 +683,76 @@ def lcd_get_RDDSM():
     data = lcd_write_cmd(RDDSM, recv=True)
     data = bin(struct.unpack('>BBB', data)[1]), bin(struct.unpack('>BBB', data)[2])
     print(data)
-    
-# TODO:
-# 0. Need to be optimized
-# 1. Check logics for '}', '{' and others
-# 2. Set right orientation.
+
+# TODO: Set font structure for '}', '{', '@', '_' and check others
+# and optimize:
 def lcd_fill_bicolor(data, x, y, width, height, color, bgcolor=BLACK):
-    lcd_set_window(x, x+7, y, y+width-1)
-    print(height, width)
+    lcd_set_window(x, x+height-1, y, y+width-1)
     words = bytearray(0)
-    i = 1
-    for w in data:
-        word = bin(w)[2:]
-        lw = len(word)
-        if i > width:
-            lcd_write_data(words)
-            lcd_set_window(x+(8-height+2), x-1, y, y+width-1)
-            if lw == 1 and word == '0':
-                word = '0'*(height-8-2)
-            elif lw < height-8:
-                word = '0'*(height-8-lw)+word[:-2]
-            else:
-                word = word[:-2]
-        else:
-            if lw < 8:
-                word = '0'*(8-lw)+word
-        print(word)
+    bgpixel = get_Npix_monoword(bgcolor, pixels=1)
+    pixel = get_Npix_monoword(color, pixels=1)
+
+    for word in data:
+        word = bin(word)[2:] + '0'
+        if len(word) < height:
+            word = '0'*(height-len(word)) + word
         for io in word:
-            if io == '0':
-                pixel = get_Npix_monoword(bgcolor, pixels=1)
-            else:
-                pixel = get_Npix_monoword(color, pixels=1)
-            words += pixel
-        i+=1
+            words += bgpixel if io == '0' else pixel
 
     lcd_write_data(words)
 
+# optimize:
 def lcd_print_char(char, x, y, color, font=Arial_14, bgcolor=BLACK):
     index = 'ch' + str(ord(char))
     datawidth = font[index][0]
     width  = font['width']
     height = font['height']
-    data  = font[index][1]
+    dt  = font[index][1]
+    data = []
+    j = 0
+    for i in range(len(dt)):
+        if i < len(dt)/2:
+            data.append(dt[i])
+        else:
+            data[j] = ((dt[i]>>2)<<8) | data[j]
+            j+=1
+
+    # TODO: Pack MADCTL cmd to function
+    lcd_write_cmd(MADCTL)   # Memory Access Control
+    # | MY=1 | MX=1 | MV=1 | ML=1 | BGR=1 | MH=1 | 0 | 0 |
+    lcd_write_data(0xE8)
     lcd_fill_bicolor(data, x, y, datawidth, height, color, bgcolor)
+    lcd_write_cmd(MADCTL)   # Memory Access Control
+    # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
+    lcd_write_data(0x48)
+
+def lcd_print_chars(font=Arial_14):
+    y = 10
+    x = TFTHEIGHT-10-font['height']
+    for i in range(33, 128):
+        if i == 64: continue    # @ char
+        lcd_print_char(chr(i), x, y, BLACK, bgcolor=LIGHTGREY)
+        y+=font['width']
+        if y > (TFTWIDTH-10):
+            y = 10
+            x -= font['height']
+
+# optimize:
+def lcd_print_ln(string, color, font=Arial_14):
+    y = 10
+    x = TFTHEIGHT-110-font['height']
+    for i in range(len(string)):
+        lcd_print_char(string[i], x, y, BLACK, bgcolor=CYAN)
+        y+=font['ch'+str(ord(string[i]))][0]+3
+        if y > (TFTWIDTH-10):
+            y = 10
+            x -= font['height']
 
 
 # TEST CODE
 
 lcd_init()
 
-lcd_fill_monocolor(BLUE)
+lcd_fill_monocolor(LIGHTGREY)
 
-#lcd_draw_circle_filled(TFTWIDTH//2, TFTHEIGHT//2, 80, BLACK)
-
-lcd_draw_oval(100, 50, 20, 30, RED)
-
-lcd_draw_circle_filled(TFTWIDTH//2, 25, 20, GREEN)
-
-lcd_draw_circle(TFTWIDTH//2, 279, 39, LIGHTGREY, border=5)
-
-lcd_print_char('}', 20, 40, BLACK, bgcolor=BLUE)
+lcd_print_chars()
