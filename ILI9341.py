@@ -767,15 +767,3 @@ lcd_init()
 
 lcd_fill_monocolor(LIGHTGREY)
 lcd_print_chars()
-#lcd_print_char('y', 20, 30, BLACK, bgcolor=LIGHTGREY)
-lcd_draw_rect(5, 115, TFTWIDTH-10, 45, ORANGE, border=2, fillcolor=CYAN)
-lcd_print_ln("Hello MycroPython world!", 25, 120, BLACK, bgcolor=CYAN)
-lcd_print_ln("from pyBoard.", 100, 140, BLACK, bgcolor=CYAN)
-
-lcd_draw_rect(20, 170, TFTWIDTH-40, TFTHEIGHT-190, BLUE, border=3, fillcolor=RED)
-
-lcd_draw_oval(100, 210, 20, 30, OLIVE)
-
-lcd_draw_circle_filled(TFTWIDTH//2+30, 250, 30, GREEN)
-
-lcd_draw_circle(TFTWIDTH//3, 250, 39, WHITE)
