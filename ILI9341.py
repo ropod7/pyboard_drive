@@ -608,15 +608,15 @@ def lcd_draw_rect(x, y, width, height, color, border=1, fillcolor=None):
         dborder = border*2
         lcd_set_window(xsum, xsum+width-dborder, ysum, ysum+height-dborder)
         pixels = (width-dborder)*8+border+width
-        rows   = (height>>5)
+        rows   = (height)
 
-        word = get_Npix_monoword(fillcolor) * pixels
+        word = get_Npix_monoword(fillcolor) * (pixels//4)
 
         if rows < 1:
             lcd_write_data(word)
         else:
             i=0
-            while i < (rows):
+            while i < (rows//4):
                 lcd_write_data(word)
                 i+=1
 
@@ -633,13 +633,15 @@ def get_y_perimeter_point(y, degrees, radius):
     y = int(y-(radius*cos))
     return y
 
-def lcd_draw_circle_filled(x, y, radius, color, border=2):
+def lcd_draw_circle_filled(x, y, radius, color):
     tempY = 0
     for i in range(180):
-        xNeg = get_x_perimeter_point(x, 360-i, radius)
+        xNeg = get_x_perimeter_point(x, 360-i, radius-1)
         xPos = get_x_perimeter_point(x, i, radius)
-        Y    = get_y_perimeter_point(y, i, radius)
-        if i > 89: Y = Y-1
+        if i > 89:
+            Y = get_y_perimeter_point(y, i, radius-1)
+        else:
+            Y = get_y_perimeter_point(y, i, radius)
         if i == 90: xPos = xPos-1
         if tempY != Y and tempY > 0:
             length = xPos+1
@@ -649,11 +651,14 @@ def lcd_draw_circle_filled(x, y, radius, color, border=2):
 def lcd_draw_circle(x, y, radius, color, border=1):
     width = height = border
     for i in range(360):
-        X = get_x_perimeter_point(x, i, radius)
-        Y = get_y_perimeter_point(y, i, radius)
+        X = get_x_perimeter_point(x, i, radius-border)
+        Y = get_y_perimeter_point(y, i, radius-border)
         if i == 90: X = X-1
         elif i == 180: Y = Y-1
-        lcd_draw_rect(X, Y, width, height, color, border=0)
+        if border < 4:
+            lcd_draw_pixel(X, Y, color)
+        else:
+            lcd_draw_rect(X, Y, width, height, color, border=0)
 
 def lcd_draw_oval(x, y, xradius, yradius, color):
     tempY = 0
@@ -696,7 +701,6 @@ def lcd_fill_bicolor(data, x, y, width, height, color, bgcolor=BLACK):
         word = bin(word)[2:] + '0' if len(bin(word)[2:]) < height else bin(word)[2:]
         if len(word) < height:
             word = '0'*(height-len(word)) + word
-        print(word)
         for io in word:
             words += bgpixel if io == '0' else pixel
 
@@ -763,3 +767,15 @@ lcd_init()
 
 lcd_fill_monocolor(LIGHTGREY)
 lcd_print_chars()
+#lcd_print_char('y', 20, 30, BLACK, bgcolor=LIGHTGREY)
+lcd_draw_rect(5, 115, TFTWIDTH-10, 45, ORANGE, border=2, fillcolor=CYAN)
+lcd_print_ln("Hello MycroPython world!", 25, 120, BLACK, bgcolor=CYAN)
+lcd_print_ln("from pyBoard.", 100, 140, BLACK, bgcolor=CYAN)
+
+lcd_draw_rect(20, 170, TFTWIDTH-40, TFTHEIGHT-190, BLUE, border=3, fillcolor=RED)
+
+lcd_draw_oval(100, 210, 20, 30, OLIVE)
+
+lcd_draw_circle_filled(TFTWIDTH//2+30, 250, 30, GREEN)
+
+lcd_draw_circle(TFTWIDTH//3, 250, 39, WHITE)
