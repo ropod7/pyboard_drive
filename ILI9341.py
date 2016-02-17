@@ -53,8 +53,8 @@ Arial_14 = dict(
                    0x10, 0x0C, 0x08, 0x10
                    ]],                                   # 38 &
     ch39 = [0x01, [0x1E, 0x00]],                         # 39 '
-    ch40 = [0x03, [0xF0, 0x0C, 0x02, 0x1C, 0x60, 0x80]], # 40 (
-    ch41 = [0x03, [0x02, 0x0C, 0xF0, 0x80, 0x60, 0x1C]], # 41 )
+    ch40 = [0x03, [0xFC, 0x06, 0x02, 0x1C, 0x30, 0x80]], # 40 (
+    ch41 = [0x03, [0x02, 0x06, 0xFC, 0x80, 0x30, 0x1C]], # 41 )
     ch42 = [0x05, [0x04, 0x14, 0x0E, 0x14, 0x04, 0x00,
                    0x00, 0x00, 0x00, 0x00
                    ]],                                   # 42 *
@@ -102,8 +102,8 @@ Arial_14 = dict(
                    0x08, 0x04, 0x04, 0x00, 0x00, 0x00]], # 62 >
     ch63 = [0x06, [0x0C, 0x02, 0x82, 0x42, 0x22, 0x1C,
                    0x00, 0x00, 0x14, 0x00, 0x00, 0x00]], # 63 ?
-    ch64 = [0x0D, [0xE0, 0x18, 0x04, 0xC4, 0x22, 0x12,
-                   0x12, 0x12, 0xA2, 0x72, 0x04, 0x08,
+    ch64 = [0x0D, [0xE0, 0x18, 0x04, 0xE2, 0x22, 0x12,
+                   0x12, 0x12, 0xA2, 0x72, 0x02, 0x0C,
                    0xF0, 0x0C, 0x30, 0x40, 0x4C, 0x90,
                    0x90, 0x90, 0x88, 0x9C, 0x90, 0x50,
                    0x4C, 0x20
@@ -230,8 +230,8 @@ Arial_14 = dict(
     ch102 = [0x04, [0x08, 0xFC, 0x0A, 0x0A, 0x00, 0x1C,
                     0x00, 0x00
                     ]],                                   # 102 f
-    ch103 = [0x06, [0xF0, 0x08, 0x08, 0x08, 0x10, 0xF8,
-                    0x4C, 0x90, 0x90, 0x90, 0x88, 0x7C]], # 103 g
+    ch103 = [0x06, [0xF8, 0x08, 0x08, 0x08, 0x10, 0xFC,
+                    0x44, 0x90, 0x90, 0x90, 0x88, 0x7C]], # 103 g
     ch104 = [0x06, [0xFE, 0x10, 0x08, 0x08, 0x08, 0xF0,
                     0x1C, 0x00, 0x00, 0x00, 0x00, 0x1C]], # 104 h
     ch105 = [0x01, [0xFA, 0x1C]],                         # 105 i
@@ -271,14 +271,14 @@ Arial_14 = dict(
     ch120 = [0x06, [0x08, 0x30, 0xC0, 0xC0, 0x30, 0x08,
                     0x10, 0x0C, 0x00, 0x00, 0x0C, 0x10]], # 120 x
     ch121 = [0x07, [0x18, 0x60, 0x80, 0x00, 0x80, 0x60,
-                    0x18, 0x00, 0x80, 0x8C, 0x70, 0x0C,
+                    0x18, 0x00, 0x80, 0x8C, 0x78, 0x04,
                     0x00, 0x00
                     ]],                                   # 121 y
     ch122 = [0x06, [0x08, 0x08, 0x88, 0x68, 0x18, 0x08,
                     0x10, 0x18, 0x14, 0x10, 0x10, 0x10]], # 122 z
-    ch123 = [0x03, [0x80, 0x7C, 0x02, 0x00, 0x7C, 0x80]], # 123 {
+    ch123 = [0x03, [0x40, 0xBE, 0x01, 0x00, 0x3C, 0x40]], # 123 {
     ch124 = [0x01, [0xFE, 0xFC]],                         # 124 |
-    ch125 = [0x03, [0x02, 0x7C, 0x80, 0x80, 0x7C, 0x00]], # 125 }
+    ch125 = [0x03, [0x01, 0xBE, 0x40, 0x40, 0x3C, 0x01]], # 125 }
     ch126 = [0x07, [0x40, 0x20, 0x20, 0x60, 0x40, 0x40,
                     0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
                     0x00, 0x00
@@ -431,9 +431,8 @@ def lcd_init():
 
     lcd_write_cmd(SWRESET)  # Reset SW
     pyb.delay(50)
-    lcd_write_cmd(MADCTL)   # Memory Access Control
-    # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
-    lcd_write_data(0x48)
+
+    set_graph_orientation()
 
     lcd_write_cmd(PTLON)    # Partial mode ON
 
@@ -684,69 +683,78 @@ def lcd_get_RDDSM():
     data = bin(struct.unpack('>BBB', data)[1]), bin(struct.unpack('>BBB', data)[2])
     print(data)
 
-# TODO: Set font structure for '}', '{', '@', '_' and check others
+# TODO: rewrite function trying 'Write Memory Continue' for False
 # and optimize:
 def lcd_fill_bicolor(data, x, y, width, height, color, bgcolor=BLACK):
     lcd_set_window(x, x+height-1, y, y+width-1)
     words = bytearray(0)
+
     bgpixel = get_Npix_monoword(bgcolor, pixels=1)
     pixel = get_Npix_monoword(color, pixels=1)
 
     for word in data:
-        word = bin(word)[2:] + '0'
+        word = bin(word)[2:] + '0' if len(bin(word)[2:]) < height else bin(word)[2:]
         if len(word) < height:
             word = '0'*(height-len(word)) + word
+        print(word)
         for io in word:
             words += bgpixel if io == '0' else pixel
 
     lcd_write_data(words)
 
+def set_char_orientation():
+    lcd_write_cmd(MADCTL)   # Memory Access Control
+    # | MY=1 | MX=1 | MV=1 | ML=1 | BGR=1 | MH=1 | 0 | 0 |
+    lcd_write_data(0xE8)
+
+def set_graph_orientation():
+    lcd_write_cmd(MADCTL)   # Memory Access Control
+    # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
+    lcd_write_data(0x48)
+
 # optimize:
-def lcd_print_char(char, x, y, color, font=Arial_14, bgcolor=BLACK):
+def lcd_print_char(char, x, y, color, font=Arial_14, bgcolor=BLACK, cont=False):
     index = 'ch' + str(ord(char))
     datawidth = font[index][0]
     width  = font['width']
     height = font['height']
     dt  = font[index][1]
+    X = TFTHEIGHT-y-height
+    Y = x
     data = []
     j = 0
     for i in range(len(dt)):
-        if i < len(dt)/2:
+        if i < len(dt)//2:
             data.append(dt[i])
         else:
-            data[j] = ((dt[i]>>2)<<8) | data[j]
+            data[j] = (( dt[i] >> 2) << 8) | data[j]
             j+=1
 
-    # TODO: Pack MADCTL cmd to function
-    lcd_write_cmd(MADCTL)   # Memory Access Control
-    # | MY=1 | MX=1 | MV=1 | ML=1 | BGR=1 | MH=1 | 0 | 0 |
-    lcd_write_data(0xE8)
-    lcd_fill_bicolor(data, x, y, datawidth, height, color, bgcolor)
-    lcd_write_cmd(MADCTL)   # Memory Access Control
-    # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
-    lcd_write_data(0x48)
+    set_char_orientation()
+    lcd_fill_bicolor(data, X, Y, datawidth, height, color, bgcolor)
+    if not cont:
+        set_graph_orientation()
 
 def lcd_print_chars(font=Arial_14):
     y = 10
-    x = TFTHEIGHT-10-font['height']
+    x = 10
     for i in range(33, 128):
-        if i == 64: continue    # @ char
-        lcd_print_char(chr(i), x, y, BLACK, bgcolor=LIGHTGREY)
-        y+=font['width']
-        if y > (TFTWIDTH-10):
-            y = 10
-            x -= font['height']
+        cont = False if i == 127 else True
+        lcd_print_char(chr(i), x, y, BLACK, bgcolor=LIGHTGREY, cont=cont)
+        x += font['width'] + 2
+        if x > (TFTWIDTH-10):
+            x = 10
+            y += font['height']
 
 # optimize:
-def lcd_print_ln(string, color, font=Arial_14):
-    y = 10
-    x = TFTHEIGHT-110-font['height']
+def lcd_print_ln(string, x, y, color, font=Arial_14, bgcolor=WHITE):
     for i in range(len(string)):
-        lcd_print_char(string[i], x, y, BLACK, bgcolor=CYAN)
-        y+=font['ch'+str(ord(string[i]))][0]+3
-        if y > (TFTWIDTH-10):
-            y = 10
-            x -= font['height']
+        cont = False if i == len(string)-1 else True
+        lcd_print_char(string[i], x, y, color, bgcolor=bgcolor, cont=cont)
+        x += font['ch' + str( ord( string[i] ) )][0] + 3
+        if x > (TFTWIDTH-10):
+            x = 10
+            y -= font['height']
 
 
 # TEST CODE
@@ -754,5 +762,4 @@ def lcd_print_ln(string, color, font=Arial_14):
 lcd_init()
 
 lcd_fill_monocolor(LIGHTGREY)
-
 lcd_print_chars()
