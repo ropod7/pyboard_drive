@@ -486,13 +486,4 @@ lcd_draw_rect(5, 85, TFTWIDTH-10, 55, ORANGE, border=2, fillcolor=CYAN)
 lcd_print_ln("Hello MicroPython world!", 25, 95, BLACK, bgcolor=CYAN)
 lcd_print_ln("(from pyBoard)", 90, 115, BLACK, bgcolor=CYAN)
 
-#lcd_draw_rect(20, 170, TFTWIDTH-40, TFTHEIGHT-190, YELLOW, border=3, fillcolor=RED)
-
-#lcd_draw_oval(100, 210, 20, 30, OLIVE)
-
-#lcd_draw_circle_filled(TFTWIDTH//2+30, 250, 30, GREEN)
-
-#lcd_draw_circle(TFTWIDTH//3, 250, 39, WHITE)
-
-# last time: 1.615 seconds
 print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
