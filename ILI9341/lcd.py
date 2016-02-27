@@ -145,77 +145,6 @@ def lcd_init():
 
     lcd_write_cmd(RAMWR)
 
-#def lcd_VSYNC_init():
-    ##pass
-    #lcd_write_cmd(NORON)    # Normal mode ON
-
-    #lcd_write_cmd(FRMCTR3)  # Frame rate control (in partial mode)
-    #lcd_write_words([0x00, 0x1B])
-    ##                0x00          DIV[1:0] (x 1/1)
-    ##                      0x10    112Hz
-    ##                      0x1B    70Hz (Default)
-
-    #lcd_write_cmd(DFUNCTR)  # Display function control
-    #lcd_write_words([0x0A, 0x80, 0x27, 0x3F])
-    ##                      0x80                REV = "1" norm. white, ISC[3:0] = "0000" Scan cicle 17ms.
-    ##                            0x27          320 lines
-    ##                            0x03          32  lines
-    ##                                  0x3F    63 CLK
-
-    #lcd_write_cmd(PRCTR)
-    #lcd_write_words([0x72, 0x72, 0x10, 0x18])
-    ##                0x72                      VFP = 114 lines
-    ##                      0x72                VBP = 114 lines
-    ##                            0x10          HFP = 16 CLK
-    ##                                  0x18    HBP = 24 CLK
-
-    #lcd_write_cmd(IFMODE)    # RGB Interface Signal Control
-    #lcd_write_data(0xE0)     # SYNC mode RCM[1:0] = "11"
-    #pyb.delay(16)
-
-## useless function
-#def lcd_VSYNC_start():
-    ## Set GRAM Address:
-    ##lcd_set_window(0, 100, 240, 108)
-    ##lcd_set_window(0, 0, 240, 320)
-
-    ## Interface Control:
-    #lcd_write_cmd(IFCTL)
-    #lcd_write_words([0x01, 0x00, 0x08])
-    ##                            0x08    DM[1:0] = "10" VSYNC mode
-
-    #pyb.delay(16)
-
-    #lcd_write_cmd(RAMWR)
-
-## useless function
-#def lcd_VSYNC_deinit():
-    #lcd_write_cmd(IFMODE)   # RGB Interface control
-    #lcd_write_data(0x80)    # RCM[1:0] = "10" DE mode
-
-    #lcd_write_cmd(PTLON)    # Partial mode ON
-
-    ##lcd_write_cmd(FRMCTR3)  # Frame rate control (in partial mode)
-    ##lcd_write_words([0x00, 0x1b])
-    ##                0x00          DIV[1:0] (x 1/1)
-    ##                      0x1B    70Hz (Default)
-
-    ##lcd_write_cmd(DFUNCTR)  # Display function control
-    ##lcd_write_words([0x0A, 0x80, 0x27, 0x00])
-    ##                      0x80                REV = "1" norm. white, ISC[3:0] = "0000" Scan cicle 17ms.
-
-    #lcd_write_cmd(PRCTR)
-    #lcd_write_words([0x02, 0x02, 0x0A, 0x14])
-    ##                0x02                      VFP = 2 lines
-    ##                      0x02                VBP = 2 lines
-    ##                            0x0A          HFP = 10 CLK
-    ##                                  0x14    HBP = 20 CLK
-
-    #lcd_write_cmd(IFCTL)    # Interface Control
-    #lcd_write_words([0x01, 0x00, 0x00])
-    ##                            0x00     DM[1:0] = "00" and RM = 0 is System interface mode
-    #pyb.delay(16)
-
 def get_Npix_monoword(color, pixels=4):
     R, G, B = color
     fmt = '>Q' if pixels == 4 else '>H'
@@ -384,27 +313,6 @@ def lcd_draw_oval(x, y, xradius, yradius, color):
             lcd_draw_Hline(xNeg, Y, length, color, width=2)
         tempY = Y
 
-
-
-#def set_word_length_old(word, height=14):
-    #word = bin(word)[2:]
-    #word = word + '0' if len(word) < height else word
-    #if len(word) < height:
-        #word = '0'*(height-len(word)) + word
-
-    #print(hex(int('0b1' + word)))
-    #return word
-
-## optimize:
-#def lcd_fill_bicolor_old(data, x, y, width, height, color, bgcolor=WHITE, scale=1):
-    #lcd_set_window(x, x+height-1, y, y+width-1)
-    #bgpixel = get_Npix_monoword(bgcolor, pixels=1)
-    #pixel = get_Npix_monoword(color, pixels=1)
-    #words = ''.join(map(set_word_length_old, data))
-    #words = bytes(words, 'ascii').replace(b'0', bgpixel).replace(b'1', pixel)
-    #lcd_write_data(words)
-
-
 # optimize:
 def lcd_print_char(char, x, y, color, font, bgcolor=BLACK, cont=False):
     index = 'ch' + str(ord(char))
@@ -441,15 +349,5 @@ lcd_chars_test(WHITE, bgcolor=NAVY)
 #lcd_print_char('y', 150, 150, WHITE, Arial_14, bgcolor=NAVY)
 lcd_draw_rect(5, 85, TFTWIDTH-10, 55, ORANGE, border=2, fillcolor=CYAN)
 lcd_print_ln("Hello MicroPython world!", 25, 95, BLACK, bgcolor=CYAN)
-#lcd_print_ln("(from pyBoard)", 90, 115, BLACK, bgcolor=CYAN)
 
-#lcd_draw_rect(20, 170, TFTWIDTH-40, TFTHEIGHT-190, YELLOW, border=3, fillcolor=RED)
-
-#lcd_draw_oval(100, 210, 20, 30, OLIVE)
-
-#lcd_draw_circle_filled(TFTWIDTH//2+30, 250, 30, GREEN)
-
-#lcd_draw_circle(TFTWIDTH//3, 250, 39, WHITE, degrees=120)
-
-# last time: 1.615 seconds
 print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
