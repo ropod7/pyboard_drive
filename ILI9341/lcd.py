@@ -1,7 +1,7 @@
 #
 #    WORK IN PROGRESS
 #
-# lcd.py - controlling TFT LCD ILI9341
+# main.py - controlling TFT LCD ILI9341
 # Data transfer using 4-line Serial protocol (Series II)
 # 16-bit RGB Color (R:5-bit; G:6-bit; B:5-bit)
 # About 30Hz monocolor screen refresh
@@ -14,16 +14,14 @@ import math
 import pyb, micropython
 from pyb import SPI, Pin
 
-from fonts import Arial_14
-
 micropython.alloc_emergency_exception_buf(100)
 
 rate = 42000000
 
 spi = SPI(1, SPI.MASTER, baudrate=rate, polarity=1, phase=1, bits=8)
+rst = Pin('X3', Pin.OUT_PP)    # Reset Pin
 csx = Pin('X4', Pin.OUT_PP)    # CSX Pin
 dcx = Pin('X5', Pin.OUT_PP)    # D/Cx Pin
-rst = Pin('X3', Pin.OUT_PP)    # Reset Pin
 
 # Color definitions.
 #     RGB 16-bit Color (R:5-bit; G:6-bit; B:5-bit)
@@ -49,72 +47,9 @@ GREENYELLOW = [18, 63, 4 ]        # 173, 255,  47
 TFTWIDTH  = 240
 TFTHEIGHT = 320
 
-# LCD control registers
-NOP        = 0x00
-SWRESET    = 0x01    # Software Reset (page 90)
-#     LCD Read status registers
-RDDID      = 0x04    # Read display identification 24-bit information (page 91)
-RDDST      = 0x09    # Read Display Status 32-bit (page 92)
-RDDPM      = 0x0A    # Read Display Power Mode 8-bit (page 94)
-RDDMADCTL  = 0x0B    # Read Display MADCTL 8-bit (page 95)
-RDPIXFMT   = 0x0C    # Read Display Pixel Format 8-bit (page 96)
-RDDIM      = 0x0D    # Read Display Image Format 3-bit (page 97)
-RDDSM      = 0x0E    # Read Display Signal Mode 8-bit (page 98)
-RDDSDR     = 0x0F    # Read Display Self-Diagnostic Result 8-bit (page 99)
-RDID1      = 0xDA
-RDID2      = 0xDB
-RDID3      = 0xDC
-RDID4      = 0xDD
-#    LCD settings registers:
-SLPIN      = 0x10    # Enter Sleep Mode (page 100)
-SLPOUT     = 0x11    # Sleep Out (page 101)
-
-PTLON      = 0x12    # Partial Mode ON (page 103)
-NORON      = 0x13    # Partial Mode OFF, Normal Display mode ON
-
-INVOFF     = 0x20
-INVON      = 0x21
-GAMMASET   = 0x26
-LCDOFF     = 0x28
-LCDON      = 0x29
-
-CASET      = 0x2A
-PASET      = 0x2B
-RAMWR      = 0x2C
-RGBSET     = 0x2D
-RAMRD      = 0x2E
-
-PTLAR      = 0x30
-MADCTL     = 0x36
-PIXFMT     = 0x3A    # Pixel Format Set
-
-IFMODE     = 0xB0    # RGB Interface control (page 154)
-FRMCTR1    = 0xB1    # Frame rate control (in normal mode)
-FRMCTR2    = 0xB2    # Frame rate control (in idle mode)
-FRMCTR3    = 0xB3    # Frame rate control (in partial mode)
-INVCTR     = 0xB4    # Frame Inversion control (page 161)
-PRCTR      = 0xB5    # Blanking porch control (page 162) VFP, VBP, HFP, HBP
-DFUNCTR    = 0xB6
-ETMOD      = 0xB7    # Entry mode set (page 168)
-
-PWCTR1     = 0xC0
-PWCTR2     = 0xC1
-PWCTR3     = 0xC2
-PWCTR4     = 0xC3
-PWCTR5     = 0xC4
-VMCTR1     = 0xC5
-VMCTR2     = 0xC7
-
-GMCTRP1    = 0xE0
-GMCTRN1    = 0xE1
-#PWCTR6     =  0xFC
-IFCTL      = 0xF6
-
 def lcd_reset():
-    rst.high()              #
-    pyb.delay(1)            #
-    rst.low()               #    RESET LCD SCREEN
-    pyb.delay(1)            #
+    rst.low()               #
+    pyb.delay(1)            #    RESET LCD SCREEN
     rst.high()              #
 
 def lcd_write(word, dc, recv, recvsize=2):
@@ -145,11 +80,23 @@ def lcd_write_words(words):
     wordL = len(words)
     wordL = wordL if wordL > 1 else ""
     fmt = '>{0}B'.format(wordL)
-
     words = struct.pack(fmt, *words)
     lcd_write_data(words)
 
+def set_char_orientation():
+    from registers import MADCTL
+    lcd_write_cmd(MADCTL)   # Memory Access Control
+    # | MY=1 | MX=1 | MV=1 | ML=1 | BGR=1 | MH=1 | 0 | 0 |
+    lcd_write_data(0xE8)
+
+def set_graph_orientation():
+    from registers import MADCTL
+    lcd_write_cmd(MADCTL)   # Memory Access Control
+    # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
+    lcd_write_data(0x48)
+
 def lcd_set_window(x0, y0, x1, y1):
+    from registers import CASET, PASET, RAMWR
     # Column Address Set
     lcd_write_cmd(CASET)
     lcd_write_words([(x0>>8) & 0xFF, x0 & 0xFF, (y0>>8) & 0xFF, y0 & 0xFF])
@@ -159,7 +106,15 @@ def lcd_set_window(x0, y0, x1, y1):
     # Memory Write
     lcd_write_cmd(RAMWR)
 
+@micropython.asm_thumb
+def asm_get_charpos(r0, r1, r2):
+    mul(r0, r1)
+    adc(r0, r2)
+
 def lcd_init():
+    from registers import (
+        LCDOFF, SWRESET, PTLON, PIXFMT, GAMMASET, ETMOD, SLPOUT, LCDON, RAMWR
+        )
     lcd_reset()
 
     lcd_write_cmd(LCDOFF)   # Display OFF
@@ -194,6 +149,7 @@ def lcd_init():
     lcd_write_cmd(RAMWR)
 
 def lcd_VSYNC_init():
+    from registers import NORON, FRMCTR3, DFUNCTR, PRCTR, IFMODE
     #pass
     lcd_write_cmd(NORON)    # Normal mode ON
 
@@ -222,6 +178,7 @@ def lcd_VSYNC_init():
     pyb.delay(16)
 
 def lcd_VSYNC_start():
+    from registers import IFCTL, RAMWR
     # Set GRAM Address:
     #lcd_set_window(0, 100, 240, 108)
     #lcd_set_window(0, 0, 240, 320)
@@ -237,6 +194,7 @@ def lcd_VSYNC_start():
 
 # useless function
 def lcd_VSYNC_deinit():
+    from registers import IFMODE, PTLON, PRCTR, IFCTL
     lcd_write_cmd(IFMODE)   # RGB Interface control
     lcd_write_data(0x80)    # RCM[1:0] = "10" DE mode
 
@@ -299,6 +257,19 @@ def lcd_random_test():
         word = get_Npix_monoword(colors[j]) * pixels
         lcd_write_data(word)
 
+def lcd_chars_test(color, font='Arial_14', bgcolor=WHITE, scale=1):
+    import fonts
+    font = getattr(fonts, font)
+    x = y = 7
+    for i in range(33, 128):
+        chrwidth = len(font['ch' + str(i)])
+        cont = False if i == 127 else True
+        lcd_print_char(chr(i), x, y, color, font, bgcolor=bgcolor, cont=cont)
+        x += asm_get_charpos(chrwidth, scale, 3)
+        if x > (TFTWIDTH-10):
+            x = 10
+            y = asm_get_charpos(font['height'], scale, y)
+
 def lcd_draw_pixel(x, y, color):
     lcd_set_window(x, x+1, y, y+1)
     lcd_write_data(get_Npix_monoword(color))
@@ -359,6 +330,17 @@ def lcd_draw_rect(x, y, width, height, color, border=1, fillcolor=None):
 def lcd_fill_monocolor(color, margin=0):
     lcd_draw_rect(margin, margin, TFTWIDTH, TFTHEIGHT, color, border=0)
 
+def set_word_length(word):
+    return bin(word)[3:]
+
+def lcd_fill_bicolor(data, x, y, width, height, color, bgcolor=WHITE, scale=1):
+    lcd_set_window(x, x+height-1, y, y+width-1)
+    bgpixel = get_Npix_monoword(bgcolor, pixels=1)
+    pixel = get_Npix_monoword(color, pixels=1)
+    words = ''.join(map(set_word_length, data))
+    words = bytes(words, 'ascii').replace(b'0', bgpixel).replace(b'1', pixel)
+    lcd_write_data(words)
+
 def get_x_perimeter_point(x, degrees, radius):
     sin = math.sin(math.radians(degrees))
     x = int(x+(radius*sin))
@@ -409,65 +391,31 @@ def lcd_draw_oval(x, y, xradius, yradius, color):
             lcd_draw_Hline(xNeg, Y, length, color, width=2)
         tempY = Y
 
-def set_word_length(word):
-    return bin(word)[3:]
-
 # optimize:
-def lcd_fill_bicolor(data, x, y, width, height, color, bgcolor=WHITE, scale=1):
-    lcd_set_window(x, x+height-1, y, y+width-1)
-    bgpixel = get_Npix_monoword(bgcolor, pixels=1)
-    pixel = get_Npix_monoword(color, pixels=1)
-    word = ''.join(map(set_word_length, data))
-    words = bytes(word, 'ascii').replace(b'0', bgpixel).replace(b'1', pixel)
-    lcd_write_data(words)
-
-def set_char_orientation():
-    lcd_write_cmd(MADCTL)   # Memory Access Control
-    # | MY=1 | MX=1 | MV=1 | ML=1 | BGR=1 | MH=1 | 0 | 0 |
-    lcd_write_data(0xE8)
-
-def set_graph_orientation():
-    lcd_write_cmd(MADCTL)   # Memory Access Control
-    # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
-    lcd_write_data(0x48)
-
-# optimize:
-def lcd_print_char(char, x, y, color, font=Arial_14, bgcolor=BLACK, cont=False):
+def lcd_print_char(char, x, y, color, font, bgcolor=BLACK, cont=False):
+    if isinstance(font, str):
+        import fonts
+        font = getattr(fonts, font)
     index = 'ch' + str(ord(char))
-    datawidth = len(font[index])
+    chrwidth = len(font[index])
     width  = font['width']
     height = font['height']
     data   = font[index]
     X = TFTHEIGHT-y-height
     Y = x
     set_char_orientation()
-    lcd_fill_bicolor(data, X, Y, datawidth, height, color, bgcolor)
+    lcd_fill_bicolor(data, X, Y, chrwidth, height, color, bgcolor)
     if not cont:
         set_graph_orientation()
 
-@micropython.asm_thumb
-def asm_get_charpos(r0, r1, r2):
-    mul(r0, r1)
-    adc(r0, r2)
-
-def lcd_print_chars(color, font=Arial_14, bgcolor=WHITE, scale=1):
-    y = 7
-    x = 7
-    for i in range(33, 128):
-        chrwidth = len(font['ch' + str(i)])
-        cont = False if i == 127 else True
-        lcd_print_char(chr(i), x, y, color, bgcolor=bgcolor, cont=cont)
-        x += asm_get_charpos(chrwidth, scale, 3)
-        if x > (TFTWIDTH-10):
-            x = 10
-            y = asm_get_charpos(font['height'], scale, y)
-
 # optimize:
-def lcd_print_ln(string, x, y, color, font=Arial_14, bgcolor=WHITE, scale=1):
+def lcd_print_ln(string, x, y, color, font='Arial_14', bgcolor=WHITE, scale=1):
+    import fonts
+    font = getattr(fonts, font)
     for i in range(len(string)):
         chrwidth = len(font['ch' + str(ord(string[i]))])
         cont = False if i == len(string)-1 else True
-        lcd_print_char(string[i], x, y, color, bgcolor=bgcolor, cont=cont)
+        lcd_print_char(string[i], x, y, color, font=font, bgcolor=bgcolor, cont=cont)
         x += asm_get_charpos(chrwidth, scale, 3)
         if x > (TFTWIDTH-10):
             x = 10
@@ -480,10 +428,6 @@ starttime = pyb.micros()//1000
 lcd_init()
 
 lcd_fill_monocolor(NAVY)
-lcd_print_chars(WHITE, bgcolor=NAVY)
-#lcd_print_char('y', 20, 30, BLACK, bgcolor=LIGHTGREY)
-lcd_draw_rect(5, 85, TFTWIDTH-10, 55, ORANGE, border=2, fillcolor=CYAN)
-lcd_print_ln("Hello MicroPython world!", 25, 95, BLACK, bgcolor=CYAN)
-lcd_print_ln("(from pyBoard)", 90, 115, BLACK, bgcolor=CYAN)
+lcd_chars_test(WHITE, bgcolor=NAVY)
 
 print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
