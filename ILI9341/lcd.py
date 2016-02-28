@@ -96,6 +96,11 @@ def set_graph_orientation():
     # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
     lcd_write_data(0x48)
 
+def set_image_orientation():
+    lcd_write_cmd(MADCTL)   # Memory Access Control
+    # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
+    lcd_write_data(0xC8)
+
 def lcd_set_window(x0, y0, x1, y1):
     # Column Address Set
     lcd_write_cmd(CASET)
@@ -127,10 +132,6 @@ def lcd_init():
     lcd_write_cmd(PIXFMT)   # Pixel format set
     #lcd_write_data(0x66)    # 18-bit/pixel
     lcd_write_data(0x55)    # 16-bit/pixel
-
-    ##############################################################
-    #lcd_VSYNC_deinit()
-    ##############################################################
 
     lcd_write_cmd(GAMMASET)
     lcd_write_data(0x01)
@@ -338,6 +339,24 @@ def lcd_print_ln(string, x, y, color, font=Arial_14, bgcolor=WHITE, scale=1):
             x = 10
             y -= font['height'] * scale
 
+# test function, but usable (too slow)
+def render_bmp(filename, x, y, width, height):
+    set_image_orientation()
+    path = 'images/'
+    lcd_set_window(x, width+x, y, height+y)
+    lines = list()
+    with open(path + filename, 'rb') as f:
+        f.seek(138)
+        while True:
+            try:
+                MSB = ord(f.read(1))
+                LSB = ord(f.read(1))
+                data = struct.pack('BB', LSB, MSB)
+                lcd_write_data(data)
+            except TypeError:
+                break
+
+    set_graph_orientation()
 
 starttime = pyb.micros()//1000
 # TEST CODE
@@ -345,9 +364,7 @@ starttime = pyb.micros()//1000
 lcd_init()
 
 lcd_fill_monocolor(NAVY)
-lcd_chars_test(WHITE, bgcolor=NAVY)
-#lcd_print_char('y', 150, 150, WHITE, Arial_14, bgcolor=NAVY)
-lcd_draw_rect(5, 85, TFTWIDTH-10, 55, ORANGE, border=2, fillcolor=CYAN)
-lcd_print_ln("Hello MicroPython world!", 25, 95, BLACK, bgcolor=CYAN)
+
+render_bmp('gradient.bmp', 0, 0, 240, 320)
 
 print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
