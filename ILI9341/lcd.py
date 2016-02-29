@@ -10,6 +10,7 @@
 import os
 import struct
 import math
+import json
 
 import pyb, micropython
 from pyb import SPI, Pin
@@ -339,32 +340,29 @@ def lcd_print_ln(string, x, y, color, font=Arial_14, bgcolor=WHITE, scale=1):
             x = 10
             y -= font['height'] * scale
 
-# test function, but usable (too slow)
 def render_bmp(filename, x, y, width, height):
     set_image_orientation()
     path = 'images/'
     lcd_set_window(x, width+x, y, height+y)
-    lines = list()
     with open(path + filename, 'rb') as f:
         f.seek(138)
         while True:
             try:
-                MSB = ord(f.read(1))
-                LSB = ord(f.read(1))
-                data = struct.pack('BB', LSB, MSB)
+                data = f.read(500)
+                data = struct.unpack('<{0}H'.format(len(data)//2), data)
+                data = struct.pack('>{0}H'.format(len(data)), *data)
                 lcd_write_data(data)
-            except TypeError:
-                break
+            except OSError: break
 
     set_graph_orientation()
+
+
 
 starttime = pyb.micros()//1000
 # TEST CODE
 
 lcd_init()
-
 lcd_fill_monocolor(NAVY)
-
-render_bmp('gradient.bmp', 0, 0, 240, 320)
+render_bmp('test.bmp', 60, 80, 119, 160)
 
 print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
