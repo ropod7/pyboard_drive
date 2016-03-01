@@ -10,7 +10,7 @@
 import os
 import struct
 import math
-import json
+import array
 
 import pyb, micropython
 from pyb import SPI, Pin
@@ -29,24 +29,24 @@ dcx = Pin('X5', Pin.OUT_PP)    # D/Cx Pin
 
 # Color definitions.
 #     RGB 16-bit Color (R:5-bit; G:6-bit; B:5-bit)
-BLACK       = [0,  0,  0 ]        #   0,   0,   0
-NAVY        = [0,  0,  15]        #   0,   0, 128
-DARKGREEN   = [0,  31, 0 ]        #   0, 128,   0
-DARKCYAN    = [0,  31, 15]        #   0, 128, 128
-MAROON      = [15, 0,  0 ]        # 128,   0,   0
-PURPLE      = [15, 0,  15]        # 128,   0, 128
-OLIVE       = [15, 31, 0 ]        # 128, 128,   0
-LIGHTGREY   = [23, 47, 23]        # 192, 192, 192
-DARKGREY    = [15, 31, 15]        # 128, 128, 128
-BLUE        = [0,  0,  31]        #   0,   0, 255
-GREEN       = [0,  63, 0 ]        #   0, 255,   0
-CYAN        = [0,  63, 31]        #   0, 255, 255
-RED         = [31, 0,  0 ]        # 255,   0,   0
-MAGENTA     = [31, 0,  31]        # 255,   0, 255
-YELLOW      = [31, 63, 0 ]        # 255, 255,   0
-WHITE       = [31, 63, 31]        # 255, 255, 255
-ORANGE      = [31, 39, 0 ]        # 255, 165,   0
-GREENYELLOW = [18, 63, 4 ]        # 173, 255,  47
+BLACK       = (0,  0,  0 )        #   0,   0,   0
+NAVY        = (0,  0,  15)        #   0,   0, 128
+DARKGREEN   = (0,  31, 0 )        #   0, 128,   0
+DARKCYAN    = (0,  31, 15)        #   0, 128, 128
+MAROON      = (15, 0,  0 )        # 128,   0,   0
+PURPLE      = (15, 0,  15)        # 128,   0, 128
+OLIVE       = (15, 31, 0 )        # 128, 128,   0
+LIGHTGREY   = (23, 47, 23)        # 192, 192, 192
+DARKGREY    = (15, 31, 15)        # 128, 128, 128
+BLUE        = (0,  0,  31)        #   0,   0, 255
+GREEN       = (0,  63, 0 )        #   0, 255,   0
+CYAN        = (0,  63, 31)        #   0, 255, 255
+RED         = (31, 0,  0 )        # 255,   0,   0
+MAGENTA     = (31, 0,  31)        # 255,   0, 255
+YELLOW      = (31, 63, 0 )        # 255, 255,   0
+WHITE       = (31, 63, 31)        # 255, 255, 255
+ORANGE      = (31, 39, 0 )        # 255, 165,   0
+GREENYELLOW = (18, 63, 4 )        # 173, 255,  47
 
 TFTWIDTH  = 240
 TFTHEIGHT = 320
@@ -148,9 +148,15 @@ def lcd_init():
     lcd_write_cmd(RAMWR)
 
 def get_Npix_monoword(color, pixels=4):
-    R, G, B = color
     fmt = '>Q' if pixels == 4 else '>H'
-    pixel = (R<<11) | (G<<5) | B
+    if color == WHITE:
+        pixel = 0xFFFF
+    elif color == BLACK:
+        word = struct.pack(fmt, 0)
+        return word
+    else:
+        R, G, B = color
+        pixel = (R<<11) | (G<<5) | B
     if pixels == 4:
         monocolor = pixel<<(16*3) | pixel<<(16*2) | pixel<<16 | pixel
     elif pixels == 1:
@@ -194,9 +200,14 @@ def lcd_chars_test(color, font=Arial_14, bgcolor=WHITE, scale=1):
             x = 10
             y = asm_get_charpos(font['height'], scale, y)
 
-def lcd_draw_pixel(x, y, color):
-    lcd_set_window(x, x+1, y, y+1)
-    lcd_write_data(get_Npix_monoword(color))
+def lcd_draw_pixel(x, y, color, pixels=4):
+    if pixels == 4:
+        lcd_set_window(x, x+1, y, y+1)
+    elif pixels == 1:
+        lcd_set_window(x, x+1, y, y+1)
+    else:
+        raise ValueError("Pixels count must be 1 to 4")
+    lcd_write_data(get_Npix_monoword(color, pixels=pixels))
 
 def lcd_draw_Vline(x, y, length, color, width=1):
     if length > TFTHEIGHT: length = TFTHEIGHT
@@ -258,9 +269,9 @@ def set_word_length(word):
     return bin(word)[3:]
 
 def lcd_fill_bicolor(data, x, y, width, height, color, bgcolor=WHITE, scale=1):
-    lcd_set_window(x, x+height-1, y, y+width-1)
-    bgpixel = get_Npix_monoword(bgcolor, pixels=1)
-    pixel = get_Npix_monoword(color, pixels=1)
+    lcd_set_window(x, x+(height*scale)-1, y, y+(width*scale)-1)
+    bgpixel = get_Npix_monoword(bgcolor, pixels=1) * scale
+    pixel = get_Npix_monoword(color, pixels=1) * scale
     words = ''.join(map(set_word_length, data))
     words = bytes(words, 'ascii').replace(b'0', bgpixel).replace(b'1', pixel)
     lcd_write_data(words)
@@ -298,11 +309,11 @@ def lcd_draw_circle(x, y, radius, color, border=1, degrees=360):
         if i == 90: X = X-1
         elif i == 180: Y = Y-1
         if border < 4:
-            lcd_draw_pixel(X, Y, color)
+            lcd_draw_pixel(X, Y, color, pixels=1)
         else:
             lcd_draw_rect(X, Y, width, height, color, border=0)
 
-def lcd_draw_oval(x, y, xradius, yradius, color):
+def lcd_draw_oval_filled(x, y, xradius, yradius, color):
     tempY = 0
     for i in range(180):
         xNeg = get_x_perimeter_point(x, 360-i, xradius)
@@ -316,40 +327,69 @@ def lcd_draw_oval(x, y, xradius, yradius, color):
         tempY = Y
 
 # optimize:
-def lcd_print_char(char, x, y, color, font, bgcolor=BLACK, cont=False):
+def lcd_print_char(char, x, y, color, font, bgcolor=BLACK, cont=False, scale=1):
+    scale = 8 if scale > 8 else scale
     index = 'ch' + str(ord(char))
     chrwidth = len(font[index])
-    width  = font['width']
     height = font['height']
     data   = font[index]
     X = TFTHEIGHT-y-height
     Y = x
     set_char_orientation()
-    lcd_fill_bicolor(data, X, Y, chrwidth, height, color, bgcolor)
+    lcd_fill_bicolor(data, X, Y, chrwidth, height, color, bgcolor, scale=scale)
     if not cont:
         set_graph_orientation()
 
-# optimize:
+# TODO:
+# 1. Split by words and high string must be rendered in multiply lines
+# 2. optimize:
 def lcd_print_ln(string, x, y, color, font=Arial_14, bgcolor=WHITE, scale=1):
+    scale = 4 if scale > 4 else scale
     for i in range(len(string)):
         chrwidth = len(font['ch' + str(ord(string[i]))])
         cont = False if i == len(string)-1 else True
-        lcd_print_char(string[i], x, y, color, font, bgcolor=bgcolor, cont=cont)
-        x += asm_get_charpos(chrwidth, scale, 3)
+        lcd_print_char(string[i], x, y, color, font, bgcolor=bgcolor, cont=cont, scale=scale)
+        x += asm_get_charpos(chrwidth, scale-(scale//2), 3)
         if x > (TFTWIDTH-10):
             x = 10
-            y -= font['height'] * scale
+            y -= font['height'] * scale-(scale//2)
 
+# solution from forum.micropython.org
+# Need to be understandet
+@micropython.asm_thumb
+def reverse(r0, r1):               # bytearray, len(bytearray)
+    add(r4, r0, r1)
+    sub(r4, 1) # end address
+    label(LOOP)
+    ldrb(r5, [r0, 0])
+    ldrb(r6, [r4, 0])
+    strb(r6, [r0, 0])
+    strb(r5, [r4, 0])
+    add(r0, 1)
+    sub(r4, 1)
+    cmp(r4, r0)
+    bpl(LOOP)
+
+def test():
+    a = bytearray([0, 1, 2, 3]) # even length
+    reverse(a, len(a))
+    print(a)
+    a = bytearray([0, 1, 2, 3, 4]) # odd length
+    reverse(a, len(a))
+    print(a)
+
+# TODO:
+# 1. read image data (width, height, size, startbit) from BMP header regs
+# and set them to rendering params
 def render_bmp(filename, x, y, width, height):
     set_image_orientation()
     path = 'images/'
-    lcd_set_window(x, width+x, y, height+y)
+    lcd_set_window(x, (width)+x, y, (height)+y)
     with open(path + filename, 'rb') as f:
         f.seek(138)
-        while True:
+        while 1:
             try:
-                data = f.read(500)
-                data = struct.unpack('<{0}H'.format(len(data)//2), data)
+                data = array.array('H', f.read(512))
                 data = struct.pack('>{0}H'.format(len(data)), *data)
                 lcd_write_data(data)
             except OSError: break
@@ -360,8 +400,8 @@ def render_bmp(filename, x, y, width, height):
 
 starttime = pyb.micros()//1000
 # TEST CODE
-
 lcd_init()
+
 lcd_fill_monocolor(NAVY)
 render_bmp('test.bmp', 60, 80, 119, 160)
 
