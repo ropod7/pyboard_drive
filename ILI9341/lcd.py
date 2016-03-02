@@ -182,7 +182,8 @@ def lcd_random_test():
         lcd_write_data(word)
 
 def lcd_chars_test(color, font=Arial_14, bgcolor=WHITE, scale=1):
-    x = y = 7
+    scale = 2 if scale > 1 else 1
+    x = y = 7 * scale
     for i in range(33, 128):
         chrwidth = len(font['ch' + str(i)])
         cont = False if i == 127 else True
