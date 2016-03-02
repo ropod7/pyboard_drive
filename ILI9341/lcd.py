@@ -68,9 +68,8 @@ def lcd_write(word, dc, recv, recvsize=2):
         data = spi.send_recv(struct.pack(fmt, word), recv=recv)
         csx.high()
         return data
-    else:
-        spi.send(word)
 
+    spi.send(word)
     csx.high()
 
 def lcd_write_cmd(word, recv=None):
@@ -148,23 +147,16 @@ def lcd_init():
     lcd_write_cmd(RAMWR)
 
 def get_Npix_monoword(color, pixels=4):
-    fmt = '>Q' if pixels == 4 else '>H'
     if color == WHITE:
-        pixel = 0xFFFF
+        word = 0xFFFF
     elif color == BLACK:
-        word = struct.pack(fmt, 0)
-        return word
+        word = 0
     else:
         R, G, B = color
-        pixel = (R<<11) | (G<<5) | B
+        word = (R<<11) | (G<<5) | B
+    word = struct.pack('>H', word)
     if pixels == 4:
-        monocolor = pixel<<(16*3) | pixel<<(16*2) | pixel<<16 | pixel
-    elif pixels == 1:
-        monocolor = pixel
-    else:
-        raise ValueError("Pixels count must be 1 to 4")
-
-    word = struct.pack(fmt, monocolor)
+        word = word * 4
     return word
 
 def lcd_test():
@@ -194,19 +186,17 @@ def lcd_chars_test(color, font=Arial_14, bgcolor=WHITE, scale=1):
     for i in range(33, 128):
         chrwidth = len(font['ch' + str(i)])
         cont = False if i == 127 else True
-        lcd_print_char(chr(i), x, y, color, font, bgcolor=bgcolor, cont=cont)
+        lcd_print_char(chr(i), x, y, color, font, bgcolor=bgcolor, cont=cont, scale=scale)
         x += asm_get_charpos(chrwidth, scale, 3)
         if x > (TFTWIDTH-10):
             x = 10
             y = asm_get_charpos(font['height'], scale, y)
 
 def lcd_draw_pixel(x, y, color, pixels=4):
-    if pixels == 4:
-        lcd_set_window(x, x+1, y, y+1)
-    elif pixels == 1:
-        lcd_set_window(x, x+1, y, y+1)
-    else:
-        raise ValueError("Pixels count must be 1 to 4")
+    if pixels not in [1, 4]:
+        raise ValueError("Pixels count must be 1 or 4")
+
+    lcd_set_window(x, x+1, y, y+1)
     lcd_write_data(get_Npix_monoword(color, pixels=pixels))
 
 def lcd_draw_Vline(x, y, length, color, width=1):
@@ -387,7 +377,7 @@ def render_bmp(filename, x, y, width, height):
     lcd_set_window(x, (width)+x, y, (height)+y)
     with open(path + filename, 'rb') as f:
         f.seek(138)
-        while 1:
+        while True:
             try:
                 data = array.array('H', f.read(512))
                 data = struct.pack('>{0}H'.format(len(data)), *data)
@@ -397,10 +387,9 @@ def render_bmp(filename, x, y, width, height):
     set_graph_orientation()
 
 
-
-starttime = pyb.micros()//1000
 # TEST CODE
 lcd_init()
+starttime = pyb.micros()//1000
 
 lcd_fill_monocolor(NAVY)
 render_bmp('test.bmp', 60, 80, 119, 160)
