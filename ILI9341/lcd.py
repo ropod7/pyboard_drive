@@ -323,7 +323,7 @@ def lcd_draw_oval_filled(x, y, xradius, yradius, color):
             length = xPos+1
             lcd_draw_Hline(xNeg, Y, length, color, width=2)
         tempY = Y
-        
+
 # TODO:
 # 1. Check chars positioning, change in lcd_set_window position
 # 2. optimize:
@@ -371,24 +371,40 @@ def reverse(r0, r1):               # bytearray, len(bytearray)
     label(loopend)
     sub (r1, 2)  # End of loop?
     bpl(loopstart)
+    
+def set_image_headers(f):
+    headers = list()
+    if f.read(2) != b'BM':
+        raise OSError('Not valid BMP image')
+    for pos in (10, 18, 22):                                 # startbit, width, height
+        f.seek(pos)
+        headers.append(struct.unpack('<H', f.read(2))[0])    # read double byte
+    return headers
 
 # TODO:
-# 1. read image data (width, height, size, startbit) from BMP header regs
-# and set them to rendering params
-def render_bmp(filename, x, y, width, height, cached=True):
+# 1. image alignment setting for small size images
+def render_bmp(filename, x, y, cached=True):
     path = 'images/'
-    startbit = 138
     memread = 480
     if filename + '.cache' not in os.listdir(path + '/cache'):
         cached = False
     if cached:
         path = 'images/cache/'
         filename = filename + '.cache'
-        startbit = 9
+        startbit = 8
         memread = 512
+
     set_image_orientation()
-    lcd_set_window(x, (width)+x, y, (height)+y)
     with open(path + filename, 'rb') as f:
+        if cached:
+            width  = struct.unpack('H', f.readline())[0]
+            height = struct.unpack('H', f.readline())[0]
+        else:
+            startbit, width, height = set_image_headers(f)
+        if width < TFTWIDTH:
+            width -= 1
+
+        lcd_set_window(x, (width)+x, y, (height)+y)
         f.seek(startbit)
         while True:
             try:
@@ -399,6 +415,7 @@ def render_bmp(filename, x, y, width, height, cached=True):
                     reverse(data, len(data))
                     lcd_write_data(data)
             except OSError: break
+
     set_graph_orientation()
 
 def clear_cache(path):
@@ -406,27 +423,36 @@ def clear_cache(path):
         if obj.endswith('.cache'):
             os.remove(path + '/' + obj)
 
-def cache_image(image, width, height):
+def render_image_list(cached=True, path='images', cpath='cache'): # images/cache
+    starttime = pyb.micros()//1000
+    for image in os.listdir(path):
+        if image != cpath:
+            render_bmp(image, 0, 0, cached=cached)
+        #pyb.delay(1000)
+    return (pyb.micros()//1000-starttime)/1000
+
+def cache_image(image):
+    lcd_fill_monocolor(BLACK)
+    lcd_print_ln("Caching:", 25, 25, DARKGREY, bgcolor=BLACK)
+    lcd_print_ln(image + '...', 45, 45, DARKGREY, bgcolor=BLACK)
     memread = 480
-    startbit = 138
     path = 'images/cache/'
-    c = open(path + image + '.cache', 'ab')
-    c.write(array.array('H', (memread,)))   #
-    c.write(b'\n')                          #
-    c.write(bytearray([height]))            #   Before image header realization
-    c.write(b"\n")                          #   test feature
-    c.write(bytearray([width]))             #
-    c.write(b'\n')                          #
-    data = '1'
     with open('images/' + image, 'rb') as f:
+        startbit, width, height = set_image_headers(f)
+
+        c = open(path + image + '.cache', 'ab')
+        for val in [width, height]:
+            c.write(bytes(array.array('H', [val])) + b"\n")
+
         f.seek(startbit)
+        data = '1'
         while len(data) != 0:
             try:
                 data = bytearray(f.read(memread))
                 reverse(data, len(data))
                 c.write(data)
             except OSError: break
-    c.close()
+        c.close()
     print('Cached:', image)
 
 # TEST CODE
@@ -434,5 +460,9 @@ if __name__ == "__main__":
     lcd_init()
 
     starttime = pyb.micros()//1000
-    # some code
+
+    render_bmp('display.bmp', 0, 0)
+    render_bmp('gradient.bmp', 0, 0, cached=False)
+
+    # last time executed in: 1.379 seconds
     print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
