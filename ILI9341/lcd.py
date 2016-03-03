@@ -10,6 +10,7 @@
 import os
 import struct
 import math
+import json
 import array
 
 import pyb, micropython
@@ -19,6 +20,12 @@ from fonts import Arial_14
 from registers import *
 
 micropython.alloc_emergency_exception_buf(100)
+
+imgcachedir = 'images/cache'
+if 'cache' not in os.listdir('images'):
+    try:
+        os.mkdir(imgcachedir)
+    except OSError: pass
 
 rate = 42000000
 
@@ -316,8 +323,10 @@ def lcd_draw_oval_filled(x, y, xradius, yradius, color):
             length = xPos+1
             lcd_draw_Hline(xNeg, Y, length, color, width=2)
         tempY = Y
-
-# optimize:
+        
+# TODO:
+# 1. Check chars positioning, change in lcd_set_window position
+# 2. optimize:
 def lcd_print_char(char, x, y, color, font, bgcolor=BLACK, cont=False, scale=1):
     scale = 8 if scale > 8 else scale
     index = 'ch' + str(ord(char))
@@ -349,50 +358,92 @@ def lcd_print_ln(string, x, y, color, font=Arial_14, bgcolor=WHITE, scale=1):
 # Need to be understandet
 @micropython.asm_thumb
 def reverse(r0, r1):               # bytearray, len(bytearray)
-    add(r4, r0, r1)
-    sub(r4, 1) # end address
-    label(LOOP)
-    ldrb(r5, [r0, 0])
-    ldrb(r6, [r4, 0])
-    strb(r6, [r0, 0])
-    strb(r5, [r4, 0])
-    add(r0, 1)
-    sub(r4, 1)
-    cmp(r4, r0)
-    bpl(LOOP)
 
-def test():
-    a = bytearray([0, 1, 2, 3]) # even length
-    reverse(a, len(a))
-    print(a)
-    a = bytearray([0, 1, 2, 3, 4]) # odd length
-    reverse(a, len(a))
-    print(a)
+    b(loopend)
+
+    label(loopstart)
+    ldrb(r2, [r0, 0])
+    ldrb(r3, [r0, 1])
+    strb(r3, [r0, 0])
+    strb(r2, [r0, 1])
+    add(r0, 2)
+
+    label(loopend)
+    sub (r1, 2)  # End of loop?
+    bpl(loopstart)
+
+def render_cached_bmp(filename, x, y, width, height):
+    path = 'images/cache/'
+    filename = filename + '.cache'
+    startbit = 9
+    memread = 512
+    with open(path + filename, 'rb') as f:
+        f.seek(startbit)
+        while True:
+            try:
+                lcd_write_data(f.read(memread))
+            except OSError: break
 
 # TODO:
 # 1. read image data (width, height, size, startbit) from BMP header regs
 # and set them to rendering params
-def render_bmp(filename, x, y, width, height):
+def render_bmp(filename, x, y, width, height, cached=True):
     set_image_orientation()
-    path = 'images/'
     lcd_set_window(x, (width)+x, y, (height)+y)
+    path = 'images/'
+    if filename + '.cache' not in os.listdir(path + '/cache'):
+        cached = False
+    if cached:
+        render_cached_bmp(filename, x, y, width, height)
+        set_graph_orientation()
+        return 0
+
+    startbit = 138
+    memread = 480
+
     with open(path + filename, 'rb') as f:
-        f.seek(138)
+        f.seek(startbit)
         while True:
             try:
-                data = array.array('H', f.read(512))
-                data = struct.pack('>{0}H'.format(len(data)), *data)
+                data = bytearray(f.read(480))
+                reverse(data, len(data))
                 lcd_write_data(data)
             except OSError: break
 
     set_graph_orientation()
 
+def clear_cache(path):
+    for obj in os.listdir(path):
+        if obj.endswith('.cache'):
+            os.remove(path + '/' + obj)
+
+def cache_image(image, width, height):
+    memread = 480
+    startbit = 138
+    path = 'images/cache/'
+    c = open(path + image + '.cache', 'ab')
+    c.write(array.array('H', (memread,)))   #
+    c.write(b'\n')                          #
+    c.write(bytearray([height]))            #   Before image header realization
+    c.write(b"\n")                          #   test feature
+    c.write(bytearray([width]))             #
+    c.write(b'\n')                          #
+    data = '1'
+    with open('images/' + image, 'rb') as f:
+        f.seek(startbit)
+        while len(data) != 0:
+            try:
+                data = bytearray(f.read(memread))
+                reverse(data, len(data))
+                c.write(data)
+            except OSError: break
+    c.close()
+    print('Cached:', image)
 
 # TEST CODE
-lcd_init()
-starttime = pyb.micros()//1000
+if __name__ == "__main__":
+    lcd_init()
 
-lcd_fill_monocolor(NAVY)
-render_bmp('test.bmp', 60, 80, 119, 160)
-
-print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
+    starttime = pyb.micros()//1000
+    # some code
+    print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
