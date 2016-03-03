@@ -383,6 +383,7 @@ def set_image_headers(f):
 
 # TODO:
 # 1. image alignment setting for small size images
+# 2. resize large size image to screen resolution sizes
 def render_bmp(filename, x, y, cached=True):
     path = 'images/'
     memread = 480
