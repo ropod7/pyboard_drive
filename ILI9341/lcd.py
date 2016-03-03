@@ -372,44 +372,33 @@ def reverse(r0, r1):               # bytearray, len(bytearray)
     sub (r1, 2)  # End of loop?
     bpl(loopstart)
 
-def render_cached_bmp(filename, x, y, width, height):
-    path = 'images/cache/'
-    filename = filename + '.cache'
-    startbit = 9
-    memread = 512
-    with open(path + filename, 'rb') as f:
-        f.seek(startbit)
-        while True:
-            try:
-                lcd_write_data(f.read(memread))
-            except OSError: break
-
 # TODO:
 # 1. read image data (width, height, size, startbit) from BMP header regs
 # and set them to rendering params
 def render_bmp(filename, x, y, width, height, cached=True):
-    set_image_orientation()
-    lcd_set_window(x, (width)+x, y, (height)+y)
     path = 'images/'
+    startbit = 138
+    memread = 480
     if filename + '.cache' not in os.listdir(path + '/cache'):
         cached = False
     if cached:
-        render_cached_bmp(filename, x, y, width, height)
-        set_graph_orientation()
-        return 0
-
-    startbit = 138
-    memread = 480
-
+        path = 'images/cache/'
+        filename = filename + '.cache'
+        startbit = 9
+        memread = 512
+    set_image_orientation()
+    lcd_set_window(x, (width)+x, y, (height)+y)
     with open(path + filename, 'rb') as f:
         f.seek(startbit)
         while True:
             try:
-                data = bytearray(f.read(480))
-                reverse(data, len(data))
-                lcd_write_data(data)
+                if cached:
+                    lcd_write_data(f.read(memread))
+                else:
+                    data = bytearray(f.read(480))
+                    reverse(data, len(data))
+                    lcd_write_data(data)
             except OSError: break
-
     set_graph_orientation()
 
 def clear_cache(path):
