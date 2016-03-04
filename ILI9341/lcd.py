@@ -362,14 +362,19 @@ def lcd_print_ln(string, x, y, color, font=Arial_14, bgcolor=WHITE, scale=1, bc=
             x += asm_get_charpos(chrwidth, chpos, 3)
         x += asm_get_charpos(len(font['ch32']), chpos, 3)
     if bc:                                                    # blink carriage
-        blink_carriage(x, y, 7)
+        if (x + 2*scale) >= (TFTWIDTH-10):
+            x = X
+            y += (font['height']+2) * scale
+        blink_carriage(x, y, color, 7, font, bgcolor, scale=scale)
 
-def blink_carriage(x, y, times):
+def blink_carriage(x, y, color, times, font, bgcolor, scale=1):
+    height = font['height'] * scale
+    width = 2 * scale
     i = 0
     while i != times:
-        lcd_draw_rect(x, y, 2, 14, WHITE, border=0)
+        lcd_draw_rect(x, y, width, height, color, border=0)
         pyb.delay(500)
-        lcd_draw_rect(x, y, 2, 14, BLACK, border=0)
+        lcd_draw_rect(x, y, width, height, bgcolor, border=0)
         pyb.delay(500)
         i+=1
 
