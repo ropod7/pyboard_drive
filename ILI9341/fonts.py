@@ -1,4 +1,7 @@
 # Fonts definitions:
+# TODO:
+# 1. extend font by cyrillic and some other chars
+# 2. Add other font families
 Arial_14 = dict(
     width  = 0x0D, # width
     height = 0x0E, # height
