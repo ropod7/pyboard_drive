@@ -224,6 +224,11 @@ def lcd_draw_Hline(x, y, length, color, width=1):
     pixels = pixels//4 if pixels >= 4 else pixels
     word = get_Npix_monoword(color) * pixels
     lcd_write_data(word)
+    
+# TODO:
+# 1. To realize not orthogonal lines drawing
+def lcd_draw_line():
+    pass
 
 def lcd_draw_rect(x, y, width, height, color, border=1, fillcolor=None):
     if width > TFTWIDTH: width = TFTWIDTH
@@ -325,34 +330,48 @@ def lcd_draw_oval_filled(x, y, xradius, yradius, color):
         tempY = Y
 
 # TODO:
-# 1. Check chars positioning, change in lcd_set_window position
-# 2. optimize:
+# 1. To realize chars caching:
 def lcd_print_char(char, x, y, color, font, bgcolor=BLACK, cont=False, scale=1):
     scale = 8 if scale > 8 else scale
     index = 'ch' + str(ord(char))
     chrwidth = len(font[index])
     height = font['height']
     data   = font[index]
-    X = TFTHEIGHT-y-height
+    X = TFTHEIGHT-y-height*scale
     Y = x
     set_char_orientation()
     lcd_fill_bicolor(data, X, Y, chrwidth, height, color, bgcolor, scale=scale)
     if not cont:
         set_graph_orientation()
 
-# TODO:
-# 1. Split by words and high string must be rendered in multiply lines
-# 2. optimize:
-def lcd_print_ln(string, x, y, color, font=Arial_14, bgcolor=WHITE, scale=1):
+def lcd_print_ln(string, x, y, color, font=Arial_14, bgcolor=WHITE, scale=1, bc=False):
+    X, Y = x, y
     scale = 4 if scale > 4 else scale
-    for i in range(len(string)):
-        chrwidth = len(font['ch' + str(ord(string[i]))])
-        cont = False if i == len(string)-1 else True
-        lcd_print_char(string[i], x, y, color, font, bgcolor=bgcolor, cont=cont, scale=scale)
-        x += asm_get_charpos(chrwidth, scale-(scale//2), 3)
-        if x > (TFTWIDTH-10):
-            x = 10
-            y -= font['height'] * scale-(scale//2)
+    for word in string.split(' '):
+        lnword = len(word)
+        if (x + lnword*7*scale) >= (TFTWIDTH-10):
+            x = X
+            y += (font['height']+2) * scale
+        for i in range(lnword):
+            chpos = scale-(scale//2)
+            chrwidth = len(font['ch' + str(ord(word[i]))])
+            cont = False if i == len(word)-1 else True
+            lcd_print_char(word[i], x, y, color, font, bgcolor=bgcolor, cont=cont, scale=scale)
+            if chrwidth == 1:
+                chpos = scale+1 if scale > 2 else scale-1
+            x += asm_get_charpos(chrwidth, chpos, 3)
+        x += asm_get_charpos(len(font['ch32']), chpos, 3)
+    if bc:                                                    # blink carriage
+        blink_carriage(x, y, 7)
+
+def blink_carriage(x, y, times):
+    i = 0
+    while i != times:
+        lcd_draw_rect(x, y, 2, 14, WHITE, border=0)
+        pyb.delay(500)
+        lcd_draw_rect(x, y, 2, 14, BLACK, border=0)
+        pyb.delay(500)
+        i+=1
 
 # solution from forum.micropython.org
 # Need to be understandet
@@ -371,7 +390,7 @@ def reverse(r0, r1):               # bytearray, len(bytearray)
     label(loopend)
     sub (r1, 2)  # End of loop?
     bpl(loopstart)
-    
+
 def set_image_headers(f):
     headers = list()
     if f.read(2) != b'BM':
@@ -381,41 +400,72 @@ def set_image_headers(f):
         headers.append(struct.unpack('<H', f.read(2))[0])    # read double byte
     return headers
 
-# TODO:
-# 1. image alignment setting for small size images
-# 2. resize large size image to screen resolution sizes
-def render_bmp(filename, x, y, cached=True):
+def get_image_points(pos, width, height):
+    if isinstance(pos, (list, tuple)):
+        x, y = pos
+    else:
+        x = 0 if width == TFTWIDTH else (TFTWIDTH-width)//2
+        y = 0 if height == TFTHEIGHT else (TFTHEIGHT-height)//2
+    return x, y
+
+# using in render_bmp function
+def _render_bmp_image(filename, pos):
     path = 'images/'
     memread = 480
-    if filename + '.cache' not in os.listdir(path + '/cache'):
-        cached = False
-    if cached:
-        path = 'images/cache/'
-        filename = filename + '.cache'
-        startbit = 8
-        memread = 512
-
-    set_image_orientation()
     with open(path + filename, 'rb') as f:
-        if cached:
-            width  = struct.unpack('H', f.readline())[0]
-            height = struct.unpack('H', f.readline())[0]
-        else:
-            startbit, width, height = set_image_headers(f)
+        startbit, width, height = set_image_headers(f)
         if width < TFTWIDTH:
             width -= 1
-
+        x, y = get_image_points(pos, width, height)
         lcd_set_window(x, (width)+x, y, (height)+y)
         f.seek(startbit)
         while True:
             try:
-                if cached:
-                    lcd_write_data(f.read(memread))
-                else:
-                    data = bytearray(f.read(480))
-                    reverse(data, len(data))
-                    lcd_write_data(data)
+                data = bytearray(f.read(memread))
+                reverse(data, len(data))
+                lcd_write_data(data)
             except OSError: break
+
+# using in render_bmp function
+def _render_bmp_cache(filename, pos):
+    path = 'images/cache/'
+    filename = filename + '.cache'
+    startbit = 8
+    memread = 512
+    with open(path + filename, 'rb') as f:
+        width = struct.unpack('H', f.readline())[0]
+        height = struct.unpack('H', f.readline())[0]
+        if width < TFTWIDTH:
+            width -= 1
+        x, y = get_image_points(pos, width, height)
+        lcd_set_window(x, (width)+x, y, (height)+y)
+        f.seek(startbit)
+        while True:
+            try:
+                lcd_write_data(f.read(memread))
+            except OSError: break
+    print(filename)
+
+# TODO:
+# 1. resize large images to screen resolution
+# 2. if part of image goes out of screen, render only displayed part
+def render_bmp(filename, pos=None, cached=True, bgcolor=None):
+    """
+    Usage:
+        With position definition:
+            render_bmp(f, [(tuple or list of x, y), cached or not, bgcolor or None])
+        Without position definition image renders in center of screen:
+            render_bmp(f, [cached or not, bgcolor or None])
+    """
+    set_image_orientation()
+    if bgcolor:
+        lcd_fill_monocolor(bgcolor)
+    if filename + '.cache' not in os.listdir('images/cache'):
+        cached = False
+    if cached:
+        _render_bmp_cache(filename, pos)
+    else:
+        _render_bmp_image(filename, pos)
 
     set_graph_orientation()
 
@@ -428,10 +478,12 @@ def render_image_list(cached=True, path='images', cpath='cache'): # images/cache
     starttime = pyb.micros()//1000
     for image in os.listdir(path):
         if image != cpath:
-            render_bmp(image, 0, 0, cached=cached)
+            render_bmp(image, cached=cached, bgcolor=BLACK)
         #pyb.delay(1000)
     return (pyb.micros()//1000-starttime)/1000
 
+# TODO:
+# 1. resize large images to screen resolution
 def cache_image(image):
     lcd_fill_monocolor(BLACK)
     lcd_print_ln("Caching:", 25, 25, DARKGREY, bgcolor=BLACK)
@@ -461,9 +513,11 @@ if __name__ == "__main__":
     lcd_init()
 
     starttime = pyb.micros()//1000
-
+    
+    lcd_fill_monocolor(BLACK)
+    lcd_print_ln("And now we start rendering from cache!", 7, 95, WHITE, bgcolor=BLACK, bc=True)
     render_bmp('display.bmp', 0, 0)
-    render_bmp('gradient.bmp', 0, 0, cached=False)
+    
 
     # last time executed in: 1.379 seconds
     print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
