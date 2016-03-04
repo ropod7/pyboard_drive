@@ -367,6 +367,7 @@ def lcd_print_ln(string, x, y, color, font=Arial_14, bgcolor=WHITE, scale=1, bc=
             y += (font['height']+2) * scale
         blink_carriage(x, y, color, 7, font, bgcolor, scale=scale)
 
+# Blinking rectangular carriage on the end of line
 def blink_carriage(x, y, color, times, font, bgcolor, scale=1):
     height = font['height'] * scale
     width = 2 * scale
