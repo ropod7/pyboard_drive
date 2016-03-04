@@ -10,7 +10,6 @@
 import os
 import struct
 import math
-import json
 import array
 
 import pyb, micropython
@@ -519,6 +518,12 @@ if __name__ == "__main__":
     lcd_init()
 
     starttime = pyb.micros()//1000
+    
+    #clear_cache('images/cache')
+
+    #for image in os.listdir('images'):
+        #if image != 'cache':
+            #cache_image(image)
     
     lcd_fill_monocolor(BLACK)
     lcd_print_ln("And now we start rendering from cache!", 7, 95, WHITE, bgcolor=BLACK, bc=True)
