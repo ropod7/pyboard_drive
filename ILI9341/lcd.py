@@ -607,6 +607,5 @@ if __name__ == '__main__':
     pyb.delay(500)
     d.fillMonocolor(BLACK)
     d.renderBmp('MP_powered.bmp')
-
     # last time executed in: 1.379 seconds
     print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
