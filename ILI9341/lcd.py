@@ -1,7 +1,7 @@
 #
 #    WORK IN PROGRESS
 #
-# lcd.py - controlling TFT LCD ILI9341
+# lcd.py - contains ILI controllers TFT LCD driving classes
 # Data transfer using 4-line Serial protocol (Series II)
 # 16-bit RGB Color (R:5-bit; G:6-bit; B:5-bit)
 # About 30Hz monocolor screen refresh
@@ -16,7 +16,8 @@ import pyb, micropython
 from pyb import SPI, Pin
 
 from fonts import Arial_14
-from registers import *
+from registers import regs
+from colors import *
 
 micropython.alloc_emergency_exception_buf(100)
 
@@ -28,507 +29,584 @@ if 'cache' not in os.listdir('images'):
 
 rate = 42000000
 
-spi = SPI(1, SPI.MASTER, baudrate=rate, polarity=1, phase=1, bits=8)
-rst = Pin('X3', Pin.OUT_PP)    # Reset Pin
-csx = Pin('X4', Pin.OUT_PP)    # CSX Pin
-dcx = Pin('X5', Pin.OUT_PP)    # D/Cx Pin
+class ILI:
+    times = 0
+    def __init__(self, rstPin='X3', csxPin='X4', dcxPin='X5', port=1, rate=rate,
+            chip='ILI9341', height=320, width=240):
+        self.spi = SPI(port, SPI.MASTER, baudrate=rate, polarity=1, phase=1, bits=8)
 
-# Color definitions.
-#     RGB 16-bit Color (R:5-bit; G:6-bit; B:5-bit)
-BLACK       = (0,  0,  0 )        #   0,   0,   0
-NAVY        = (0,  0,  15)        #   0,   0, 128
-DARKGREEN   = (0,  31, 0 )        #   0, 128,   0
-DARKCYAN    = (0,  31, 15)        #   0, 128, 128
-MAROON      = (15, 0,  0 )        # 128,   0,   0
-PURPLE      = (15, 0,  15)        # 128,   0, 128
-OLIVE       = (15, 31, 0 )        # 128, 128,   0
-LIGHTGREY   = (23, 47, 23)        # 192, 192, 192
-DARKGREY    = (15, 31, 15)        # 128, 128, 128
-BLUE        = (0,  0,  31)        #   0,   0, 255
-GREEN       = (0,  63, 0 )        #   0, 255,   0
-CYAN        = (0,  63, 31)        #   0, 255, 255
-RED         = (31, 0,  0 )        # 255,   0,   0
-MAGENTA     = (31, 0,  31)        # 255,   0, 255
-YELLOW      = (31, 63, 0 )        # 255, 255,   0
-WHITE       = (31, 63, 31)        # 255, 255, 255
-ORANGE      = (31, 39, 0 )        # 255, 165,   0
-GREENYELLOW = (18, 63, 4 )        # 173, 255,  47
+        self.regs = regs[chip]
+        self.TFTHEIGHT = height
+        self.TFTWIDTH = width
 
-TFTWIDTH  = 240
-TFTHEIGHT = 320
+        self._rst = Pin(rstPin, Pin.OUT_PP)    # Reset Pin
+        self._csx = Pin(csxPin, Pin.OUT_PP)    # CSX Pin
+        self._dcx = Pin(dcxPin, Pin.OUT_PP)    # D/Cx Pin
+        if ILI.times == 0:
+            self.reset()
 
-def lcd_reset():
-    rst.low()               #
-    pyb.delay(1)            #    RESET LCD SCREEN
-    rst.high()              #
+        ILI.times += 1
 
-def lcd_write(word, dc, recv, recvsize=2):
-    dcs = ['cmd', 'data']
+    def reset(self):
+        self._rst.low()               #
+        pyb.delay(1)                  #    RESET LCD SCREEN
+        self._rst.high()              #
+        self._write_cmd(self.regs['LCDOFF'])   # Display OFF
+        pyb.delay(10)
+        self._write_cmd(self.regs['SWRESET'])  # Reset SW
+        pyb.delay(50)
+        self._graph_orientation()
+        self._write_cmd(self.regs['PTLON'])    # Partial mode ON
+        self._write_cmd(self.regs['PIXFMT'])   # Pixel format set
+        #self._write_data(0x66)    # 18-bit/pixel
+        self._write_data(0x55)    # 16-bit/pixel
+        self._write_cmd(self.regs['GAMMASET'])
+        self._write_data(0x01)
+        self._write_cmd(self.regs['ETMOD'])    # Entry mode set
+        self._write_data(0x07)
+        self._write_cmd(self.regs['SLPOUT'])   # sleep mode OFF
+        pyb.delay(10)
+        self._write_cmd(self.regs['LCDON'])
+        pyb.delay(10)
+        self._write_cmd(self.regs['RAMWR'])
 
-    DCX = dcs.index(dc) if dc in dcs else None
-    fmt = '>B{0}'.format('B' * recvsize)
-    csx.low()
-    dcx.value(DCX)
-    if recv:
-        recv = bytearray(1+recvsize)
-        data = spi.send_recv(struct.pack(fmt, word), recv=recv)
-        csx.high()
+    def _write(self, word, dc, recv, recvsize=2):
+        dcs = ['cmd', 'data']
+
+        DCX = dcs.index(dc) if dc in dcs else None
+        self._csx.low()
+        self._dcx.value(DCX)
+        if recv:
+            fmt = '>B{0}'.format('B' * recvsize)
+            recv = bytearray(1+recvsize)
+            data = self.spi.send_recv(struct.pack(fmt, word), recv=recv)
+            self._csx.high()
+            return data
+
+        self.spi.send(word)
+        self._csx.high()
+
+    def _write_cmd(self, word, recv=None):
+        data = self._write(word, 'cmd', recv)
         return data
 
-    spi.send(word)
-    csx.high()
+    def _write_data(self, word):
+        self._write(word, 'data', recv=None)
 
-def lcd_write_cmd(word, recv=None):
-    data = lcd_write(word, 'cmd', recv)
-    return data
+    def _write_words(self, words):
+        wordL = len(words)
+        wordL = wordL if wordL > 1 else ""
+        fmt = '>{0}B'.format(wordL)
+        words = struct.pack(fmt, *words)
+        self._write_data(words)
 
-def lcd_write_data(word):
-    lcd_write(word, 'data', recv=None)
+    def _char_orientation(self):
+        self._write_cmd(self.regs['MADCTL'])   # Memory Access Control
+        # | MY=1 | MX=1 | MV=1 | ML=1 | BGR=1 | MH=1 | 0 | 0 |
+        self._write_data(0xE8)
 
-def lcd_write_words(words):
-    wordL = len(words)
-    wordL = wordL if wordL > 1 else ""
-    fmt = '>{0}B'.format(wordL)
-    words = struct.pack(fmt, *words)
-    lcd_write_data(words)
+    def _graph_orientation(self):
+        self._write_cmd(self.regs['MADCTL'])   # Memory Access Control
+        # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
+        self._write_data(0x48)
 
-def set_char_orientation():
-    lcd_write_cmd(MADCTL)   # Memory Access Control
-    # | MY=1 | MX=1 | MV=1 | ML=1 | BGR=1 | MH=1 | 0 | 0 |
-    lcd_write_data(0xE8)
+    def _image_orientation(self):
+        self._write_cmd(self.regs['MADCTL'])   # Memory Access Control
+        # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
+        self._write_data(0xC8)
 
-def set_graph_orientation():
-    lcd_write_cmd(MADCTL)   # Memory Access Control
-    # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
-    lcd_write_data(0x48)
+    def _set_window(self, x0, y0, x1, y1):
+        # Column Address Set
+        self._write_cmd(self.regs['CASET'])
+        self._write_words(((x0>>8) & 0xFF, x0 & 0xFF, (y0>>8) & 0xFF, y0 & 0xFF))
+        # Page Address Set
+        self._write_cmd(self.regs['PASET'])
+        self._write_words(((x1>>8) & 0xFF, x1 & 0xFF, (y1>>8) & 0xFF, y1 & 0xFF))
+        # Memory Write
+        self._write_cmd(self.regs['RAMWR'])
 
-def set_image_orientation():
-    lcd_write_cmd(MADCTL)   # Memory Access Control
-    # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
-    lcd_write_data(0xC8)
-
-def lcd_set_window(x0, y0, x1, y1):
-    # Column Address Set
-    lcd_write_cmd(CASET)
-    lcd_write_words([(x0>>8) & 0xFF, x0 & 0xFF, (y0>>8) & 0xFF, y0 & 0xFF])
-    # Page Address Set
-    lcd_write_cmd(PASET)
-    lcd_write_words([(x1>>8) & 0xFF, x1 & 0xFF, (y1>>8) & 0xFF, y1 & 0xFF])
-    # Memory Write
-    lcd_write_cmd(RAMWR)
-
-@micropython.asm_thumb
-def asm_get_charpos(r0, r1, r2):
-    mul(r0, r1)
-    adc(r0, r2)
-
-def lcd_init():
-    lcd_reset()
-
-    lcd_write_cmd(LCDOFF)   # Display OFF
-    pyb.delay(10)
-
-    lcd_write_cmd(SWRESET)  # Reset SW
-    pyb.delay(50)
-
-    set_graph_orientation()
-
-    lcd_write_cmd(PTLON)    # Partial mode ON
-
-    lcd_write_cmd(PIXFMT)   # Pixel format set
-    #lcd_write_data(0x66)    # 18-bit/pixel
-    lcd_write_data(0x55)    # 16-bit/pixel
-
-    lcd_write_cmd(GAMMASET)
-    lcd_write_data(0x01)
-
-    lcd_write_cmd(ETMOD)    # Entry mode set
-    lcd_write_data(0x07)
-
-    lcd_write_cmd(SLPOUT)   # sleep mode OFF
-    pyb.delay(100)
-    lcd_write_cmd(LCDON)
-    pyb.delay(100)
-
-    lcd_write_cmd(RAMWR)
-
-def get_Npix_monoword(color, pixels=4):
-    if color == WHITE:
-        word = 0xFFFF
-    elif color == BLACK:
-        word = 0
-    else:
-        R, G, B = color
-        word = (R<<11) | (G<<5) | B
-    word = struct.pack('>H', word)
-    if pixels == 4:
-        word = word * 4
-    return word
-
-def lcd_test():
-    colors = [RED, ORANGE, YELLOW, GREEN, CYAN, BLUE, PURPLE, WHITE]
-    pixels = 10 * TFTWIDTH
-    for i in range(TFTHEIGHT//40):
-        word = get_Npix_monoword(colors[i]) * pixels
-        lcd_write_data(word)
-
-def lcd_random_test():
-    colors = [
-        BLACK,    NAVY,    DARKGREEN,  DARKCYAN,
-        MAROON,   PURPLE,  OLIVE,      LIGHTGREY,
-        DARKGREY, BLUE,    GREEN,      CYAN,
-        RED,      MAGENTA, YELLOW,     WHITE,
-        ORANGE,   GREENYELLOW
-        ]
-    pixels = TFTWIDTH
-    j = 0
-    for i in range(TFTHEIGHT//4):
-        j = struct.unpack('<B', os.urandom(1))[0]//15
-        word = get_Npix_monoword(colors[j]) * pixels
-        lcd_write_data(word)
-
-def lcd_chars_test(color, font=Arial_14, bgcolor=WHITE, scale=1):
-    scale = 2 if scale > 1 else 1
-    x = y = 7 * scale
-    for i in range(33, 128):
-        chrwidth = len(font['ch' + str(i)])
-        cont = False if i == 127 else True
-        lcd_print_char(chr(i), x, y, color, font, bgcolor=bgcolor, cont=cont, scale=scale)
-        x += asm_get_charpos(chrwidth, scale, 3)
-        if x > (TFTWIDTH-10):
-            x = 10
-            y = asm_get_charpos(font['height'], scale, y)
-
-def lcd_draw_pixel(x, y, color, pixels=4):
-    if pixels not in [1, 4]:
-        raise ValueError("Pixels count must be 1 or 4")
-
-    lcd_set_window(x, x+1, y, y+1)
-    lcd_write_data(get_Npix_monoword(color, pixels=pixels))
-
-def lcd_draw_Vline(x, y, length, color, width=1):
-    if length > TFTHEIGHT: length = TFTHEIGHT
-    if width > 10: width = 10
-    lcd_set_window(x, x+(width-1), y, length)
-    pixels = width * length
-    pixels = pixels//4 if pixels >= 4 else pixels
-    word = get_Npix_monoword(color) * pixels
-    lcd_write_data(word)
-
-def lcd_draw_Hline(x, y, length, color, width=1):
-    if length > TFTWIDTH: length = TFTWIDTH
-    if width > 10: width = 10
-    lcd_set_window(x, length, y, y+(width-1))
-    pixels = width * length
-    pixels = pixels//4 if pixels >= 4 else pixels
-    word = get_Npix_monoword(color) * pixels
-    lcd_write_data(word)
-    
-# TODO:
-# 1. To realize not orthogonal lines drawing
-def lcd_draw_line():
-    pass
-
-def lcd_draw_rect(x, y, width, height, color, border=1, fillcolor=None):
-    if width > TFTWIDTH: width = TFTWIDTH
-    if height > TFTHEIGHT: height = TFTHEIGHT
-    if border:
-        if border > width//2:
-            border = width//2-1
-        X, Y = x, y
-        for i in range(2):
-            Y = y+height-(border-1) if i == 1 else y
-            lcd_draw_Hline(X, Y, x+width, color, border)
-
-            Y = y+(border-1) if i == 1 else y
-            X = x+width-(border-1) if i == 1 else x
-            lcd_draw_Vline(X, Y, y+height, color, border)
-    else:
-        fillcolor = color
-
-    if fillcolor:
-        xsum = x+border
-        ysum = y+border
-        dborder = border*2
-        lcd_set_window(xsum, xsum+width-dborder, ysum, ysum+height-dborder)
-        pixels = (width-dborder)*8+border+width
-        rows   = (height)
-
-        word = get_Npix_monoword(fillcolor) * (pixels//4)
-
-        if rows < 1:
-            lcd_write_data(word)
+    def _get_Npix_monoword(self, color):
+        if color == WHITE:
+            word = 0xFFFF
+        elif color == BLACK:
+            word = 0
         else:
+            R, G, B = color
+            word = (R<<11) | (G<<5) | B
+        word = struct.pack('>H', word)
+        return word
+
+class BaseDraw(ILI):
+    def __init__(self, **kwargs):
+        super(BaseDraw, self).__init__(**kwargs)
+
+    def _set_ortho_line(self, width, length, color):
+        pixels = width * length
+        word = self._get_Npix_monoword(color) * pixels
+        self._write_data(word)
+
+    def drawPixel(self, x, y, color, pixels=4):
+        if pixels not in [1, 4]:
+            raise ValueError("Pixels count must be 1 or 4")
+
+        self._set_window(x, x+1, y, y+1)
+        self._write_data(self._get_Npix_monoword(color) * pixels)
+
+    def drawVline(self, x, y, length, color, width=1):
+        if length > self.TFTHEIGHT: length = self.TFTHEIGHT
+        if width > 10: width = 10
+        self._set_window(x, x+(width-1), y, y+length)
+        self._set_ortho_line(width, length, color)
+
+    def drawHline(self, x, y, length, color, width=1):
+        if length > self.TFTWIDTH: length = self.TFTWIDTH
+        if width > 10: width = 10
+        self._set_window(x, x+length, y, y+(width-1))
+        self._set_ortho_line(width, length, color)
+
+    def drawLine(self):
+        pass
+
+    def drawRect(self, x, y, width, height, color, border=1, fillcolor=None):
+        if width > self.TFTWIDTH: width = self.TFTWIDTH
+        if height > self.TFTHEIGHT: height = self.TFTHEIGHT
+        if border:
+            if border > width//2:
+                border = width//2-1
+            X, Y = x, y
+            for i in range(2):
+                Y = y+height-(border-1) if i == 1 else y
+                self.drawHline(X, Y, width, color, border)
+
+                Y = y+1
+                X = x+width-(border-1) if i == 1 else x
+                self.drawVline(X, Y, height, color, border)
+        else:
+            fillcolor = color
+
+        if fillcolor:
+            xsum = x+border
+            ysum = y+border
+            dborder = border*2
+            self._set_window(xsum, xsum+width-dborder, ysum, ysum+height-dborder)
+            pixels = (width-dborder)*8
+
+            word = self._get_Npix_monoword(fillcolor) * (pixels+width//8)
+
             i=0
-            while i < (rows//4):
-                lcd_write_data(word)
+            while i < (height//8):
+                self._write_data(word)
                 i+=1
 
-def lcd_fill_monocolor(color, margin=0):
-    lcd_draw_rect(margin, margin, TFTWIDTH, TFTHEIGHT, color, border=0)
+    def fillMonocolor(self, color, margin=0):
+        width = self.TFTWIDTH-margin*2
+        height = self.TFTHEIGHT-margin*2
+        self.drawRect(margin, margin, width, height, color, border=0)
 
-def set_word_length(word):
-    return bin(word)[3:]
+    def _get_x_perimeter_point(self, x, degrees, radius):
+        sin = math.sin(math.radians(degrees))
+        x = int(x+(radius*sin))
+        return x
 
-def lcd_fill_bicolor(data, x, y, width, height, color, bgcolor=WHITE, scale=1):
-    lcd_set_window(x, x+(height*scale)-1, y, y+(width*scale)-1)
-    bgpixel = get_Npix_monoword(bgcolor, pixels=1) * scale
-    pixel = get_Npix_monoword(color, pixels=1) * scale
-    words = ''.join(map(set_word_length, data))
-    words = bytes(words, 'ascii').replace(b'0', bgpixel).replace(b'1', pixel)
-    lcd_write_data(words)
+    def _get_y_perimeter_point(self, y, degrees, radius):
+        cos = math.cos(math.radians(degrees))
+        y = int(y-(radius*cos))
+        return y
 
-def get_x_perimeter_point(x, degrees, radius):
-    sin = math.sin(math.radians(degrees))
-    x = int(x+(radius*sin))
-    return x
+    def drawCircleFilled(self, x, y, radius, color):
+        tempY = 0
+        for i in range(180):
+            xNeg = self._get_x_perimeter_point(x, 360-i, radius-1)
+            xPos = self._get_x_perimeter_point(x, i, radius)
+            if i > 89:
+                Y = self._get_y_perimeter_point(y, i, radius-1)
+            else:
+                Y = self._get_y_perimeter_point(y, i, radius+1)
+            if i == 90: xPos = xPos-1
+            if tempY != Y and tempY > 0:
+                length = xPos+1
+                self.drawHline(xNeg, Y, length-xNeg, color, width=4)
+            tempY = Y
 
-def get_y_perimeter_point(y, degrees, radius):
-    cos = math.cos(math.radians(degrees))
-    y = int(y-(radius*cos))
-    return y
+    # TODO:
+    # 1. realize border thickness
+    def drawCircle(self, x, y, radius, color, border=1, degrees=360):
+        border = 5 if border > 5 else border
+        if border > 1:
+            x = x - border//2
+            y = y - border//2
+            radius = radius-border//2
+        for i in range(degrees):
+            X = self._get_x_perimeter_point(x, i, radius)
+            Y = self._get_y_perimeter_point(y, i, radius)
+            if i == 90: X = X-1
+            elif i == 180: Y = Y-1
+            self.drawHline(X, Y, border, color, width=border)
 
-def lcd_draw_circle_filled(x, y, radius, color):
-    tempY = 0
-    for i in range(180):
-        xNeg = get_x_perimeter_point(x, 360-i, radius-1)
-        xPos = get_x_perimeter_point(x, i, radius)
-        if i > 89:
-            Y = get_y_perimeter_point(y, i, radius-1)
+    def drawOvalFilled(self, x, y, xradius, yradius, color):
+        tempY = 0
+        for i in range(180):
+            xNeg = self._get_x_perimeter_point(x, 360-i, xradius)
+            xPos = self._get_x_perimeter_point(x, i, xradius)
+            Y    = self._get_y_perimeter_point(y, i, yradius)
+
+            if i > 89: Y = Y-1
+            if tempY != Y and tempY > 0:
+                length = xPos+1
+                self.drawHline(xNeg, Y, length-xNeg, color, width=4)
+            tempY = Y
+
+class BaseChars(ILI, BaseDraw):
+    def __init__(self, color=BLACK, font=Arial_14, bgcolor=WHITE, scale=1,
+                bctimes=7, **kwargs):
+        super(BaseChars, self).__init__(**kwargs)
+        self._fontColor = color
+        self._font = font
+        self._bgcolor = bgcolor
+        self._fontscale = scale
+        self._bctimes = bctimes    # blink carriage times
+
+    def initCh(self, **kwargs):
+        ch = BaseChars(**kwargs)
+        return ch
+
+    @staticmethod
+    @micropython.asm_thumb
+    def _asm_get_charpos(r0, r1, r2):
+        mul(r0, r1)
+        adc(r0, r2)
+
+    def _set_word_length(self, word):
+        return bin(word)[3:]
+
+    def _fill_bicolor(self, data, x, y, width, height, scale=None):
+        if not scale:
+            scale = self._fontscale
+        bgcolor = self._bgcolor
+        color = self._fontColor
+        self._set_window(x, x+(height*scale)-1, y, y+(width*scale)-1)
+        bgpixel = self._get_Npix_monoword(bgcolor) * scale
+        pixel = self._get_Npix_monoword(color) * scale
+        words = ''.join(map(self._set_word_length, data))
+        words = bytes(words, 'ascii').replace(b'0', bgpixel).replace(b'1', pixel)
+        self._write_data(words)
+
+    # TODO:
+    # 1. Realize fonts caching:
+    def printChar(self, char, x, y, cont=False, scale=None):
+        if not scale:
+            scale = self._fontscale
+        font = self._font
+        scale = 8 if scale > 8 else scale
+        index = str(ord(char))
+        chrwidth = len(font[index])
+        height = font['height']
+        data   = font[index]
+        X = self.TFTHEIGHT - y - (height*scale)+scale
+        Y = x
+        self._char_orientation()
+        self._fill_bicolor(data, X, Y, chrwidth, height, scale=scale)
+        if not cont:
+            self._graph_orientation()
+
+    def printLn(self, string, x, y, bc=False, scale=None):
+        if not scale:
+            scale = self._fontscale
+        font = self._font
+        X, Y = x, y
+        scale = 4 if scale > 4 else scale
+        for word in string.split(' '):
+            lnword = len(word)
+            if (x + lnword*7*scale) >= (self.TFTWIDTH-10):
+                x = X
+                y += (font['height']+2)*scale
+            for i in range(lnword):
+                chpos = scale-(scale//2)
+                chrwidth = len(font[str(ord(word[i]))])
+                cont = False if i == len(word)-1 else True
+                self.printChar(word[i], x, y, cont=cont, scale=scale)
+                if chrwidth == 1:
+                    chpos = scale+1 if scale > 2 else scale-1
+                x += self._asm_get_charpos(chrwidth, chpos, 3)
+            x += self._asm_get_charpos(len(font['32']), chpos, 3)
+        if bc:                                                    # blink carriage
+            if (x + 2 * scale) >= (self.TFTWIDTH - 10):
+                x = X
+                y += (font['height']+2) * scale
+            else:
+                x -= 4 * scale
+            self._blinkCarriage(x, y)
+
+    # Blinking rectangular carriage on the end of line
+    def _blinkCarriage(self, x, y):
+        scale = self._fontscale
+        font = self._font
+        bgcolor = self._bgcolor
+        color = self._fontColor
+        times = self._bctimes
+        height = font['height'] * scale
+        width = 2 * scale
+        i = 0
+        while i != times:
+            self.drawVline(x, y, height, color, width=width)
+            pyb.delay(500)
+            self.drawVline(x, y, height, bgcolor, width=width)
+            pyb.delay(500)
+            i+=1
+
+
+class BaseImages(ILI):
+
+    def __init__(self, **kwargs):
+        super(BaseImages, self).__init__(**kwargs)
+
+    # solution from forum.micropython.org
+    # Need to be understandet
+    @staticmethod
+    @micropython.asm_thumb
+    def _reverse(r0, r1):               # bytearray, len(bytearray)
+
+        b(loopend)
+
+        label(loopstart)
+        ldrb(r2, [r0, 0])
+        ldrb(r3, [r0, 1])
+        strb(r3, [r0, 0])
+        strb(r2, [r0, 1])
+        add(r0, 2)
+
+        label(loopend)
+        sub (r1, 2)  # End of loop?
+        bpl(loopstart)
+
+    def _set_image_headers(self, f):
+        headers = list()
+        if f.read(2) != b'BM':
+            raise OSError('Not valid BMP image')
+        for pos in (10, 18, 22):                                 # startbit, width, height
+            f.seek(pos)
+            headers.append(struct.unpack('<H', f.read(2))[0])    # read double byte
+        return headers
+
+    def _get_image_points(self, pos, width, height):
+        if isinstance(pos, (list, tuple)):
+            x, y = pos
         else:
-            Y = get_y_perimeter_point(y, i, radius)
-        if i == 90: xPos = xPos-1
-        if tempY != Y and tempY > 0:
-            length = xPos+1
-            lcd_draw_Hline(xNeg, Y, length, color, width=2)
-        tempY = Y
+            x = 0 if width == self.TFTWIDTH else (self.TFTWIDTH-width)//2
+            y = 0 if height == self.TFTHEIGHT else (self.TFTHEIGHT-height)//2
+        return x, y
 
-def lcd_draw_circle(x, y, radius, color, border=1, degrees=360):
-    width = height = border
-    for i in range(degrees):
-        X = get_x_perimeter_point(x, i, radius-border)
-        Y = get_y_perimeter_point(y, i, radius-border)
-        if i == 90: X = X-1
-        elif i == 180: Y = Y-1
-        if border < 4:
-            lcd_draw_pixel(X, Y, color, pixels=1)
+    # Using in render_bmp function
+    def _render_bmp_image(self, filename, pos):
+        path = 'images/'
+        memread = 480
+        with open(path + filename, 'rb') as f:
+            startbit, width, height = self._set_image_headers(f)
+            if width < self.TFTWIDTH:
+                width -= 1
+            x, y = self._get_image_points(pos, width, height)
+            self._set_window(x, (width)+x, y, (height)+y)
+            f.seek(startbit)
+            while True:
+                try:
+                    data = bytearray(f.read(memread))
+                    self._reverse(data, len(data))
+                    self._write_data(data)
+                except OSError: break
+
+    # Using in render_bmp function
+    def _render_bmp_cache(self, filename, pos):
+        filename = filename + '.cache'
+        startbit = 8
+        memread = 512
+        with open(imgcachedir + '/' + filename, 'rb') as f:
+            width = struct.unpack('H', f.readline())[0]
+            height = struct.unpack('H', f.readline())[0]
+            if width < self.TFTWIDTH:
+                width -= 1
+            x, y = self._get_image_points(pos, width, height)
+            self._set_window(x, (width)+x, y, (height)+y)
+            f.seek(startbit)
+            while True:
+                try:
+                    self._write_data(f.read(memread))
+                except OSError: break
+
+    # TODO:
+    # 1. resize large images to screen resolution
+    # 2. if part of image goes out of screen, render only displayed part
+    def renderBmp(self, filename, pos=None, cached=True, bgcolor=None):
+        self._image_orientation()
+        if bgcolor:
+            self.fillMonocolor(bgcolor)
+        if filename + '.cache' not in os.listdir('images/cache'):
+            cached = False
+        if cached:
+            self._render_bmp_cache(filename, pos)
         else:
-            lcd_draw_rect(X, Y, width, height, color, border=0)
+            self._render_bmp_image(filename, pos)
+        self._graph_orientation()
 
-def lcd_draw_oval_filled(x, y, xradius, yradius, color):
-    tempY = 0
-    for i in range(180):
-        xNeg = get_x_perimeter_point(x, 360-i, xradius)
-        xPos = get_x_perimeter_point(x, i, xradius)
-        Y    = get_y_perimeter_point(y, i, yradius)
+    def clearImageCache(self, path):
+        for obj in os.listdir(path):
+            if obj.endswith('.cache'):
+                os.remove(path + '/' + obj)
 
-        if i > 89: Y = Y-1
-        if tempY != Y and tempY > 0:
-            length = xPos+1
-            lcd_draw_Hline(xNeg, Y, length, color, width=2)
-        tempY = Y
+    # TODO:
+    # 1. resize large images to screen resolution
+    def cacheImage(self, image):
+        self.fillMonocolor(BLACK)
+        strings = self.initCh(DARKGREY, bgcolor=BLACK)
+        strings.printLn("Caching:", 25, 25)
+        strings.printLn(image + '...', 45, 45)
+        memread = 480
+        path = 'images/cache/'
+        with open('images/' + image, 'rb') as f:
+            startbit, width, height = self._set_image_headers(f)
 
-# TODO:
-# 1. To realize chars caching:
-def lcd_print_char(char, x, y, color, font, bgcolor=BLACK, cont=False, scale=1):
-    scale = 8 if scale > 8 else scale
-    index = 'ch' + str(ord(char))
-    chrwidth = len(font[index])
-    height = font['height']
-    data   = font[index]
-    X = TFTHEIGHT-y-height*scale
-    Y = x
-    set_char_orientation()
-    lcd_fill_bicolor(data, X, Y, chrwidth, height, color, bgcolor, scale=scale)
-    if not cont:
-        set_graph_orientation()
+            c = open(path + image + '.cache', 'ab')
+            for val in [width, height]:
+                c.write(bytes(array.array('H', [val])) + b"\n")
 
-def lcd_print_ln(string, x, y, color, font=Arial_14, bgcolor=WHITE, scale=1, bc=False):
-    X, Y = x, y
-    scale = 4 if scale > 4 else scale
-    for word in string.split(' '):
-        lnword = len(word)
-        if (x + lnword*7*scale) >= (TFTWIDTH-10):
-            x = X
-            y += (font['height']+2) * scale
-        for i in range(lnword):
-            chpos = scale-(scale//2)
-            chrwidth = len(font['ch' + str(ord(word[i]))])
-            cont = False if i == len(word)-1 else True
-            lcd_print_char(word[i], x, y, color, font, bgcolor=bgcolor, cont=cont, scale=scale)
-            if chrwidth == 1:
-                chpos = scale+1 if scale > 2 else scale-1
-            x += asm_get_charpos(chrwidth, chpos, 3)
-        x += asm_get_charpos(len(font['ch32']), chpos, 3)
-    if bc:                                                    # blink carriage
-        if (x + 2*scale) >= (TFTWIDTH-10):
-            x = X
-            y += (font['height']+2) * scale
-        blink_carriage(x, y, color, 7, font, bgcolor, scale=scale)
+            f.seek(startbit)
+            data = '1'
+            while len(data) != 0:
+                try:
+                    data = bytearray(f.read(memread))
+                    self._reverse(data, len(data))
+                    c.write(data)
+                except OSError: break
+            c.close()
+        print('Cached:', image)
 
-# Blinking rectangular carriage on the end of line
-def blink_carriage(x, y, color, times, font, bgcolor, scale=1):
-    height = font['height'] * scale
-    width = 2 * scale
-    i = 0
-    while i != times:
-        lcd_draw_rect(x, y, width, height, color, border=0)
-        pyb.delay(500)
-        lcd_draw_rect(x, y, width, height, bgcolor, border=0)
-        pyb.delay(500)
-        i+=1
+class BaseTests(BaseDraw, BaseChars, BaseImages):
 
-# solution from forum.micropython.org
-# Need to be understandet
-@micropython.asm_thumb
-def reverse(r0, r1):               # bytearray, len(bytearray)
+    def __init__(self, **kwargs):
+        super(BaseTests, self).__init__(**kwargs)
 
-    b(loopend)
+    def charsTest(self, color, font=Arial_14, bgcolor=WHITE, scale=1):
+        ch = self.initCh(color=color, font=font, bgcolor=bgcolor, scale=scale)
+        scale = 2 if scale > 1 else 1
+        x = y = 7 * scale
+        for i in range(33, 128):
+            chrwidth = len(font[str(i)])
+            cont = False if i == 127 else True
+            ch.printChar(chr(i), x, y, cont=cont, scale=scale)
+            x += self._asm_get_charpos(chrwidth, scale, 3)
+            if x > (self.TFTWIDTH-10):
+                x = 10
+                y = self._asm_get_charpos(font['height'], scale, y)
 
-    label(loopstart)
-    ldrb(r2, [r0, 0])
-    ldrb(r3, [r0, 1])
-    strb(r3, [r0, 0])
-    strb(r2, [r0, 1])
-    add(r0, 2)
+    def renderImageTest(self, cached=True, path='images', cpath='cache'): # images/cache path
+        starttime = pyb.micros()//1000
+        for image in os.listdir(path):
+            if image != cpath and image.endswith('bmp'):
+                self.renderBmp(image, cached=cached, bgcolor=BLACK)
+            #pyb.delay(1000)
+        return (pyb.micros()//1000-starttime)/1000
 
-    label(loopend)
-    sub (r1, 2)  # End of loop?
-    bpl(loopstart)
+class BaseWidgets(BaseTests):
 
-def set_image_headers(f):
-    headers = list()
-    if f.read(2) != b'BM':
-        raise OSError('Not valid BMP image')
-    for pos in (10, 18, 22):                                 # startbit, width, height
-        f.seek(pos)
-        headers.append(struct.unpack('<H', f.read(2))[0])    # read double byte
-    return headers
+    def __init__(self, **kwargs):
+        super(BaseWidgets, self).__init__(**kwargs)
 
-def get_image_points(pos, width, height):
-    if isinstance(pos, (list, tuple)):
-        x, y = pos
-    else:
-        x = 0 if width == TFTWIDTH else (TFTWIDTH-width)//2
-        y = 0 if height == TFTHEIGHT else (TFTHEIGHT-height)//2
-    return x, y
+class BaseObjects(BaseWidgets):
 
-# using in render_bmp function
-def _render_bmp_image(filename, pos):
-    path = 'images/'
-    memread = 480
-    with open(path + filename, 'rb') as f:
-        startbit, width, height = set_image_headers(f)
-        if width < TFTWIDTH:
-            width -= 1
-        x, y = get_image_points(pos, width, height)
-        lcd_set_window(x, (width)+x, y, (height)+y)
-        f.seek(startbit)
-        while True:
-            try:
-                data = bytearray(f.read(memread))
-                reverse(data, len(data))
-                lcd_write_data(data)
-            except OSError: break
+    def __init__(self, **kwargs):
+        super(BaseObjects, self).__init__(**kwargs)
 
-# using in render_bmp function
-def _render_bmp_cache(filename, pos):
-    path = 'images/cache/'
-    filename = filename + '.cache'
-    startbit = 8
-    memread = 512
-    with open(path + filename, 'rb') as f:
-        width = struct.unpack('H', f.readline())[0]
-        height = struct.unpack('H', f.readline())[0]
-        if width < TFTWIDTH:
-            width -= 1
-        x, y = get_image_points(pos, width, height)
-        lcd_set_window(x, (width)+x, y, (height)+y)
-        f.seek(startbit)
-        while True:
-            try:
-                lcd_write_data(f.read(memread))
-            except OSError: break
-    print(filename)
+class LCD(BaseObjects):
 
-# TODO:
-# 1. resize large images to screen resolution
-# 2. if part of image goes out of screen, render only displayed part
-def render_bmp(filename, pos=None, cached=True, bgcolor=None):
-    """
+    def __init__(self, **kwargs):
+        super(LCD, self).__init__(**kwargs)
+
+    def reset(self):
+        super(LCD, self).reset()
+
+    def drawPixel(self, *args, **kwargs):
+        super(LCD, self).drawPixel(*args, **kwargs)
+
+    def drawVline(self, *args, **kwargs):
+        super(LCD, self).drawVline(*args, **kwargs)
+
+    def drawHline(self, *args, **kwargs):
+        super(LCD, self).drawHline(*args, **kwargs)
+
+    def drawLine(self, *args, **kwargs):
+        super(LCD, self).drawLine(*args, **kwargs)
+
+    def drawRect(self, *args, **kwargs):
+        super(LCD, self).drawRect(*args, **kwargs)
+
+    def fillMonocolor(self, *args, **kwargs):
+        super(LCD, self).fillMonocolor(*args, **kwargs)
+
+    def drawCircleFilled(self, *args, **kwargs):
+        super(LCD, self).drawCircleFilled(*args, **kwargs)
+
+    def drawCircle(self, *args, **kwargs):
+        super(LCD, self).drawCircle(*args, **kwargs)
+
+    def drawOvalFilled(self, *args, **kwargs):
+        super(LCD, self).drawOvalFilled(*args, **kwargs)
+
+    def initCh(self, **kwargs):
+        return super(LCD, self).initCh(**kwargs)
+
+    def printChar(self, *args, **kwargs):
+        super(LCD, self).printChar(*args, **kwargs)
+
+    def printLn(self, *args, **kwargs):
+        super(LCD, self).printLn(*args, **kwargs)
+
+    def renderBmp(self, *args, **kwargs):
+        """
     Usage:
         With position definition:
-            render_bmp(f, [(tuple or list of x, y), cached or not, bgcolor or None])
+            obj.renderBmp(f, [(tuple or list of x, y), cached or not, bgcolor or None])
         Without position definition image renders in center of screen:
-            render_bmp(f, [cached or not, bgcolor or None])
-    """
-    set_image_orientation()
-    if bgcolor:
-        lcd_fill_monocolor(bgcolor)
-    if filename + '.cache' not in os.listdir('images/cache'):
-        cached = False
-    if cached:
-        _render_bmp_cache(filename, pos)
-    else:
-        _render_bmp_image(filename, pos)
+            obj.renderBmp(f, [cached or not, bgcolor or None])
+        """
+        super(LCD, self).renderBmp(*args, **kwargs)
 
-    set_graph_orientation()
+    def clearImageCache(self, *args, **kwargs):
+        super(LCD, self).clearImageCache(*args, **kwargs)
 
-def clear_cache(path):
-    for obj in os.listdir(path):
-        if obj.endswith('.cache'):
-            os.remove(path + '/' + obj)
+    def cacheImage(self, *args, **kwargs):
+        super(LCD, self).cacheImage(*args, **kwargs)
 
-def render_image_list(cached=True, path='images', cpath='cache'): # images/cache
-    starttime = pyb.micros()//1000
-    for image in os.listdir(path):
-        if image != cpath:
-            render_bmp(image, cached=cached, bgcolor=BLACK)
-        #pyb.delay(1000)
-    return (pyb.micros()//1000-starttime)/1000
+    def charsTest(self, *args, **kwargs):
+        super(LCD, self).charsTest(*args, **kwargs)
 
-# TODO:
-# 1. resize large images to screen resolution
-def cache_image(image):
-    lcd_fill_monocolor(BLACK)
-    lcd_print_ln("Caching:", 25, 25, DARKGREY, bgcolor=BLACK)
-    lcd_print_ln(image + '...', 45, 45, DARKGREY, bgcolor=BLACK)
-    memread = 480
-    path = 'images/cache/'
-    with open('images/' + image, 'rb') as f:
-        startbit, width, height = set_image_headers(f)
+    def renderImageTest(self, *args, **kwargs):
+        return super(LCD, self).renderImageTest(*args, **kwargs)
 
-        c = open(path + image + '.cache', 'ab')
-        for val in [width, height]:
-            c.write(bytes(array.array('H', [val])) + b"\n")
-
-        f.seek(startbit)
-        data = '1'
-        while len(data) != 0:
-            try:
-                data = bytearray(f.read(memread))
-                reverse(data, len(data))
-                c.write(data)
-            except OSError: break
-        c.close()
-    print('Cached:', image)
-
-# TEST CODE
-if __name__ == "__main__":
-    lcd_init()
+if __name__ == '__main__':
 
     starttime = pyb.micros()//1000
-    
-    #clear_cache('images/cache')
 
-    #for image in os.listdir('images'):
-        #if image != 'cache':
-            #cache_image(image)
-    
-    lcd_fill_monocolor(BLACK)
-    lcd_print_ln("And now we start rendering from cache!", 7, 95, WHITE, bgcolor=BLACK, bc=True)
-    render_bmp('display.bmp', 0, 0)
-    
+    d = LCD()
+    d.fillMonocolor(GREEN)
+    d.drawRect(5, 5, 230, 310, BLUE, border=10, fillcolor=ORANGE)
+    d.drawOvalFilled(120, 160, 60, 120, BLUE)
+    d.drawCircleFilled(120, 160, 60, RED)
+    d.drawCircle(120, 160, 59, GREEN, border=5)
+
+    c = d.initCh(color=BLACK, bgcolor=ORANGE)        # define string obj
+    p = d.initCh(color=BLACK, bgcolor=RED, scale=2)  # define string obj
+    c.printChar('@', 30, 30)
+    c.printLn('Hello from LCD class', 30, 290)
+    p.printLn('Python3', 89, 155)
+
+    pyb.delay(500)
+
+    d.fillMonocolor(WHITE)
+    d.charsTest(BLACK)
+    pyb.delay(500)
+    d.renderImageTest()
+    pyb.delay(500)
+    d.fillMonocolor(BLACK)
+    d.renderBmp('MP_powered.bmp')
 
     # last time executed in: 1.379 seconds
     print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
