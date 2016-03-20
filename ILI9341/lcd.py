@@ -298,7 +298,7 @@ class BaseChars(ILI, BaseDraw):
         if not scale:
             scale = self._fontscale
         font = self._font
-        scale = 8 if scale > 8 else scale
+        scale = 3 if scale > 3 else scale
         index = str(ord(char))
         chrwidth = len(font[index])
         height = font['height']
@@ -315,7 +315,7 @@ class BaseChars(ILI, BaseDraw):
             scale = self._fontscale
         font = self._font
         X, Y = x, y
-        scale = 4 if scale > 4 else scale
+        scale = 3 if scale > 3 else scale
         for word in string.split(' '):
             lnword = len(word)
             if (x + lnword*7*scale) >= (self.TFTWIDTH-10):
