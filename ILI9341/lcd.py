@@ -168,6 +168,7 @@ class BaseDraw(ILI):
         pass
 
     def drawRect(self, x, y, width, height, color, border=1, fillcolor=None):
+        border = 10 if border > 10 else border
         if width > self.TFTWIDTH: width = self.TFTWIDTH
         if height > self.TFTHEIGHT: height = self.TFTHEIGHT
         if border:
@@ -334,12 +335,13 @@ class BaseChars(ILI, BaseDraw):
                 x = X
                 y += (font['height']+2) * scale
             else:
-                x -= 4 * scale
-            self._blinkCarriage(x, y)
+                x -= 4 * scale//2
+            self._blinkCarriage(x, y, scale=scale)
 
     # Blinking rectangular carriage on the end of line
-    def _blinkCarriage(self, x, y):
-        scale = self._fontscale
+    def _blinkCarriage(self, x, y, scale=None):
+        if not scale:
+            scale = self._fontscale
         font = self._font
         bgcolor = self._bgcolor
         color = self._fontColor
@@ -581,6 +583,25 @@ class LCD(BaseObjects):
     def renderImageTest(self, *args, **kwargs):
         return super(LCD, self).renderImageTest(*args, **kwargs)
 
+
+#def set_word_length_old(word, height=14):
+    #word = bin(word)[2:]
+    #word = word + '0' if len(word) < height else word
+    #if len(word) < height:
+        #word = '0'*(height-len(word)) + word
+
+    #print(hex(int('0b1' + word)))
+    #return word
+
+## optimize:
+#def lcd_fill_bicolor_old(data, x, y, width, height, color, bgcolor=WHITE, scale=1):
+    #lcd_set_window(x, x+height-1, y, y+width-1)
+    #bgpixel = get_Npix_monoword(bgcolor, pixels=1)
+    #pixel = get_Npix_monoword(color, pixels=1)
+    #words = ''.join(map(set_word_length_old, data))
+    #words = bytes(words, 'ascii').replace(b'0', bgpixel).replace(b'1', pixel)
+    #lcd_write_data(words)
+
 if __name__ == '__main__':
 
     starttime = pyb.micros()//1000
@@ -595,10 +616,12 @@ if __name__ == '__main__':
     c = d.initCh(color=BLACK, bgcolor=ORANGE)        # define string obj
     p = d.initCh(color=BLACK, bgcolor=RED, scale=2)  # define string obj
     c.printChar('@', 30, 30)
-    c.printLn('Hello from LCD class', 30, 290)
+    c.printLn('Hello BaseChar class', 30, 290)
     p.printLn('Python3', 89, 155)
 
     pyb.delay(500)
+
+    image_caching_demo()
 
     d.fillMonocolor(WHITE)
     d.charsTest(BLACK)
@@ -607,5 +630,6 @@ if __name__ == '__main__':
     pyb.delay(500)
     d.fillMonocolor(BLACK)
     d.renderBmp('MP_powered.bmp')
+
     # last time executed in: 1.379 seconds
     print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
