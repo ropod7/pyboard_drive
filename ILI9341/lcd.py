@@ -164,8 +164,41 @@ class BaseDraw(ILI):
         self._set_window(x, x+length, y, y+(width-1))
         self._set_ortho_line(width, length, color)
 
-    def drawLine(self):
-        pass
+    # Method writed by MCHobby https://github.com/mchobby
+    # TODO:
+    # 1. support border > 1
+    def drawLine(self, x,y,x1,y1, color ):
+        if x==x1:
+            self.drawVline( x, y if y<=y1 else y1, abs(y1-y), color )
+        elif y==y1:
+            self.drawHline( x if x<=x1 else x1, y, abs(x-x1), color )
+        else:
+            # keep positive range for x
+            if x1 < x:
+              x,x1 = x1,x
+              y,y1 = y1,y
+            r = (y1-y)/(x1-x)
+            # select ratio > 1 for fast drawing (and thin line)
+            if abs(r) >= 1:
+                for i in range( x1-x+1 ):
+                    if (i==0): # first always a point
+                        self.drawPixel( x+i, math.trunc(y+(r*i)), color )
+                    else:
+                        # r may be negative when drawing to wrong way > Fix it when drawing
+                        self.drawVline( x+i, math.trunc(y+(r*i)-r)+(0 if r>0 else math.trunc(r)), abs(math.trunc(r)), color )
+            else:
+                # keep positive range for y
+                if y1 < y:
+                    x,x1 = x1,x
+                    y,y1 = y1,y
+                # invert the ratio (should be close of r = 1/r)
+                r = (x1-x)/(y1-y)
+                for i in range( y1-y+1 ):
+                    if( i== 0): # starting point is always a point
+                        self.drawPixel( math.trunc(x+(r*i)), y+i, color )
+                    else:
+                        # r may be negative when drawing the wrong way > fix it to draw positive
+                        self.drawHline( math.trunc(x+(r*i)-r)+(0 if r>0 else math.trunc(r)), y+i, abs(math.trunc(r)), color )
 
     def drawRect(self, x, y, width, height, color, border=1, fillcolor=None):
         border = 10 if border > 10 else border
@@ -192,7 +225,7 @@ class BaseDraw(ILI):
             self._set_window(xsum, xsum+width-dborder, ysum, ysum+height-dborder)
             pixels = (width-dborder)*8
 
-            word = self._get_Npix_monoword(fillcolor) * (pixels+width//8)
+            word = self._get_Npix_monoword(fillcolor) * (pixels + width)
 
             i=0
             while i < (height//8):
@@ -200,6 +233,7 @@ class BaseDraw(ILI):
                 i+=1
 
     def fillMonocolor(self, color, margin=0):
+        margin = 80 if margin > 80 else margin
         width = self.TFTWIDTH-margin*2
         height = self.TFTHEIGHT-margin*2
         self.drawRect(margin, margin, width, height, color, border=0)
@@ -229,15 +263,16 @@ class BaseDraw(ILI):
                 self.drawHline(xNeg, Y, length-xNeg, color, width=4)
             tempY = Y
 
-    # TODO:
-    # 1. realize border thickness
-    def drawCircle(self, x, y, radius, color, border=1, degrees=360):
+    def drawCircle(self, x, y, radius, color, border=1, degrees=360, startangle=0):
         border = 5 if border > 5 else border
+        # adding startangle to degrees
+        if startangle > 0:
+            degrees += startangle
         if border > 1:
             x = x - border//2
             y = y - border//2
             radius = radius-border//2
-        for i in range(degrees):
+        for i in range(startangle, degrees):
             X = self._get_x_perimeter_point(x, i, radius)
             Y = self._get_y_perimeter_point(y, i, radius)
             if i == 90: X = X-1
@@ -589,6 +624,8 @@ if __name__ == '__main__':
 
     d = LCD()
     d.fillMonocolor(GREEN)
+    # 
+    d.drawCircle(120, 160, 59, BLACK, border=5, degrees=90, startangle=90)
     d.drawRect(5, 5, 230, 310, BLUE, border=10, fillcolor=ORANGE)
     d.drawOvalFilled(120, 160, 60, 120, BLUE)
     d.drawCircleFilled(120, 160, 60, RED)
