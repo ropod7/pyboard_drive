@@ -112,7 +112,7 @@ class ILI:
 
     def _image_orientation(self):
         self._write_cmd(self.regs['MADCTL'])   # Memory Access Control
-        # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
+        # | MY=1 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
         self._write_data(0xC8)
 
     def _set_window(self, x0, y0, x1, y1):
