@@ -112,7 +112,7 @@ class ILI:
 
     def _image_orientation(self):
         self._write_cmd(self.regs['MADCTL'])   # Memory Access Control
-        # | MY=1 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
+        # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
         self._write_data(0xC8)
 
     def _set_window(self, x0, y0, x1, y1):
@@ -212,9 +212,14 @@ class BaseDraw(ILI):
                 Y = y+height-(border-1) if i == 1 else y
                 self.drawHline(X, Y, width, color, border)
 
-                Y = y+1
+                if border > 1:
+                    Y = y+1
+                    H = height
+                else:
+                    Y = y
+                    H = height + 1
                 X = x+width-(border-1) if i == 1 else x
-                self.drawVline(X, Y, height, color, border)
+                self.drawVline(X, Y, H, color, border)
         else:
             fillcolor = color
 
@@ -223,12 +228,12 @@ class BaseDraw(ILI):
             ysum = y+border
             dborder = border*2
             self._set_window(xsum, xsum+width-dborder, ysum, ysum+height-dborder)
-            pixels = (width-dborder)*8
+            pixels = width * 8
 
-            word = self._get_Npix_monoword(fillcolor) * (pixels + width)
-
+            word = self._get_Npix_monoword(fillcolor) * pixels
+            part = 1 if height < 20 else 7
             i=0
-            while i < (height//8):
+            while i < (height//part):
                 self._write_data(word)
                 i+=1
 
@@ -624,8 +629,6 @@ if __name__ == '__main__':
 
     d = LCD()
     d.fillMonocolor(GREEN)
-    # 
-    d.drawCircle(120, 160, 59, BLACK, border=5, degrees=90, startangle=90)
     d.drawRect(5, 5, 230, 310, BLUE, border=10, fillcolor=ORANGE)
     d.drawOvalFilled(120, 160, 60, 120, BLUE)
     d.drawCircleFilled(120, 160, 60, RED)
