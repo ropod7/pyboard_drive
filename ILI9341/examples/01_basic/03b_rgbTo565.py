@@ -7,6 +7,7 @@
 # w3schools color picker (from #00ff00 -> ffffff, so from RGB 0,255,0 -> 255,255,255 ) 
 #
 from lcd import *
+import pyb
 l = LCD( rate=21000000 ) # step down the SPI bus speed to 21 MHz may be opportune when using 150+ mm wires
 
 # Using color convertion from RGB888 to RGB565
@@ -19,5 +20,25 @@ for i in range( 0, boxes+1 ):
     yHeight = 320//boxes
     print( '%i, %i = %i' % (yStart, yHeight, yStart+yHeight) )
     l.drawRect( 0, yStart, 240, yHeight, aColor, border=3, fillcolor=aColor )
- 
+
+pyb.delay( 5000 ) # Wait for 5 sec
+
+for i in range( 0, boxes+1 ):
+    iColorValue = i * colorStep
+    aColor = rgbTo565(iColorValue,iColorValue, 255)
+    yStart = 0+i*(320//boxes)
+    yHeight = 320//boxes
+    print( '%i, %i = %i' % (yStart, yHeight, yStart+yHeight) )
+    l.drawRect( 0, yStart, 240, yHeight, aColor, border=3, fillcolor=aColor )
+
+pyb.delay( 5000 ) # Wait for 5 sec
+
+for i in range( 0, boxes+1 ):
+    iColorValue = i * colorStep
+    aColor = rgbTo565(255,iColorValue,iColorValue)
+    yStart = 0+i*(320//boxes)
+    yHeight = 320//boxes
+    print( '%i, %i = %i' % (yStart, yHeight, yStart+yHeight) )
+    l.drawRect( 0, yStart, 240, yHeight, aColor, border=3, fillcolor=aColor )
+
 
