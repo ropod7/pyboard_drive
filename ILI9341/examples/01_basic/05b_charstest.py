@@ -1,5 +1,5 @@
 # CharsTest is a feature of the driver allowing you to see every of the 
-# characters available in a font definition.
+# characters available in a font definition .
 #
 #
 from lcd import *
