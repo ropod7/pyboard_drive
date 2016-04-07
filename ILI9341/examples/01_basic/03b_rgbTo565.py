@@ -19,7 +19,7 @@ for i in range( 0, boxes+1 ):
     yStart = 0+i*(320//boxes)
     yHeight = 320//boxes
     print( '%i, %i = %i' % (yStart, yHeight, yStart+yHeight) )
-    l.drawRect( 0, yStart, 240, yHeight, aColor, border=3, fillcolor=aColor )
+    l.drawRect( 0, yStart, 240, yHeight, aColor, border=1, fillcolor=aColor )
 
 pyb.delay( 5000 ) # Wait for 5 sec
 
@@ -29,7 +29,7 @@ for i in range( 0, boxes+1 ):
     yStart = 0+i*(320//boxes)
     yHeight = 320//boxes
     print( '%i, %i = %i' % (yStart, yHeight, yStart+yHeight) )
-    l.drawRect( 0, yStart, 240, yHeight, aColor, border=3, fillcolor=aColor )
+    l.drawRect( 0, yStart, 240, yHeight, aColor, border=1, fillcolor=aColor )
 
 pyb.delay( 5000 ) # Wait for 5 sec
 
@@ -39,6 +39,6 @@ for i in range( 0, boxes+1 ):
     yStart = 0+i*(320//boxes)
     yHeight = 320//boxes
     print( '%i, %i = %i' % (yStart, yHeight, yStart+yHeight) )
-    l.drawRect( 0, yStart, 240, yHeight, aColor, border=3, fillcolor=aColor )
+    l.drawRect( 0, yStart, 240, yHeight, aColor, border=1, fillcolor=aColor )
 
 

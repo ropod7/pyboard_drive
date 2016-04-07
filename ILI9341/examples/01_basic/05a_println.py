@@ -1,18 +1,14 @@
-# fillMonocolor allows to fill the screen with a color at RGB565 format.
-#
-# Thank to the margin paramater, you can "skip a border" all around the screen border.
-# The fill operation will then be centered in the screen   
+# The driver allows you to draw text (string) on the screen.
+# Text drawing has the following feature:
+#   * Support of various font
+#   * Support for text color (and background color)
+#   * Cursor blinking 
+#   * Draw from position (x,y)
 #
 from lcd import *
 import pyb
 
 l = LCD( rate=21000000 ) # step down the SPI bus speed to 21 MHz may be opportune when using 150+ mm wires
-
-# CharsTest() simply print all the characters of a given font.
-#    Quite usefull for testing.
-#
-# l.charsTest( color=YELLOW, font=Arial_14 )
-# pyb.delay( 5000 ) 
 
 l.fillMonocolor( CYAN )
 
