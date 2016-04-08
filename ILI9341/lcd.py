@@ -6,6 +6,14 @@
 # 16-bit RGB Color (R:5-bit; G:6-bit; B:5-bit)
 # About 30Hz monocolor screen refresh
 #
+# Default is portrait oriented:
+# lcd = LCD( [ portrait = True ] )
+#    width is 240px
+#    height is 320px
+#
+# lcd = LCD( portrait = False )
+#    width is 320px
+#    height is 240px
 
 import os
 import struct
@@ -30,61 +38,79 @@ if 'cache' not in os.listdir('images'):
 rate = 42000000
 
 class ILI:
-    times = 0
+    _cnt  = 0
+    _spi  = object()
+    _rst  = object()
+    _csx  = object()
+    _dcx  = object()
+    _regs = dict()
+    _portrait = True
+
     def __init__(self, rstPin='X3', csxPin='X4', dcxPin='X5', port=1, rate=rate,
-            chip='ILI9341', height=320, width=240):
-        self.spi = SPI(port, SPI.MASTER, baudrate=rate, polarity=1, phase=1, bits=8)
+            chip='ILI9341', height=320, width=240, portrait=True):
 
-        self.regs = regs[chip]
-        self.TFTHEIGHT = height
-        self.TFTWIDTH = width
-
-        self._rst = Pin(rstPin, Pin.OUT_PP)    # Reset Pin
-        self._csx = Pin(csxPin, Pin.OUT_PP)    # CSX Pin
-        self._dcx = Pin(dcxPin, Pin.OUT_PP)    # D/Cx Pin
-        if ILI.times == 0:
+        if ILI._cnt == 0:
+            ILI._regs = regs[chip]
+            ILI._spi  = SPI(port, SPI.MASTER, baudrate=rate, polarity=1, phase=1, bits=8)
+            ILI._rst  = Pin(rstPin, Pin.OUT_PP)    # Reset Pin
+            ILI._csx  = Pin(csxPin, Pin.OUT_PP)    # CSX Pin
+            ILI._dcx  = Pin(dcxPin, Pin.OUT_PP)    # D/Cx Pin
+            self.setPortrait(portrait)
             self.reset()
+            self._initILI()
 
-        ILI.times += 1
+        if ILI._portrait:
+            self.TFTHEIGHT = height
+            self.TFTWIDTH = width
+        else:
+            self.TFTHEIGHT = width
+            self.TFTWIDTH = height
+
+        ILI._cnt += 1
 
     def reset(self):
-        self._rst.low()               #
+        ILI._rst.low()                #
         pyb.delay(1)                  #    RESET LCD SCREEN
-        self._rst.high()              #
-        self._write_cmd(self.regs['LCDOFF'])   # Display OFF
+        ILI._rst.high()               #
+
+    def setPortrait(self, portrait):
+        ILI._portrait = portrait
+
+    def _initILI(self):
+        self._write_cmd(ILI._regs['LCDOFF'])   # Display OFF
         pyb.delay(10)
-        self._write_cmd(self.regs['SWRESET'])  # Reset SW
+        self._write_cmd(ILI._regs['SWRESET'])  # Reset SW
         pyb.delay(50)
         self._graph_orientation()
-        self._write_cmd(self.regs['PTLON'])    # Partial mode ON
-        self._write_cmd(self.regs['PIXFMT'])   # Pixel format set
+        self._write_cmd(ILI._regs['PTLON'])    # Partial mode ON
+        self._write_cmd(ILI._regs['PIXFMT'])   # Pixel format set
         #self._write_data(0x66)    # 18-bit/pixel
         self._write_data(0x55)    # 16-bit/pixel
-        self._write_cmd(self.regs['GAMMASET'])
+        self._write_cmd(ILI._regs['GAMMASET'])
         self._write_data(0x01)
-        self._write_cmd(self.regs['ETMOD'])    # Entry mode set
+        self._write_cmd(ILI._regs['ETMOD'])    # Entry mode set
         self._write_data(0x07)
-        self._write_cmd(self.regs['SLPOUT'])   # sleep mode OFF
+        self._write_cmd(ILI._regs['SLPOUT'])   # sleep mode OFF
         pyb.delay(10)
-        self._write_cmd(self.regs['LCDON'])
+        self._write_cmd(ILI._regs['LCDON'])
         pyb.delay(10)
-        self._write_cmd(self.regs['RAMWR'])
+        self._write_cmd(ILI._regs['RAMWR'])
 
     def _write(self, word, dc, recv, recvsize=2):
         dcs = ['cmd', 'data']
 
         DCX = dcs.index(dc) if dc in dcs else None
-        self._csx.low()
-        self._dcx.value(DCX)
+        ILI._csx.low()
+        ILI._dcx.value(DCX)
         if recv:
             fmt = '>B{0}'.format('B' * recvsize)
             recv = bytearray(1+recvsize)
             data = self.spi.send_recv(struct.pack(fmt, word), recv=recv)
-            self._csx.high()
+            ILI._csx.high()
             return data
 
-        self.spi.send(word)
-        self._csx.high()
+        ILI._spi.send(word)
+        ILI._csx.high()
 
     def _write_cmd(self, word, recv=None):
         data = self._write(word, 'cmd', recv)
@@ -100,30 +126,42 @@ class ILI:
         words = struct.pack(fmt, *words)
         self._write_data(words)
 
-    def _char_orientation(self):
-        self._write_cmd(self.regs['MADCTL'])   # Memory Access Control
-        # | MY=1 | MX=1 | MV=1 | ML=1 | BGR=1 | MH=1 | 0 | 0 |
-        self._write_data(0xE8)
-
     def _graph_orientation(self):
-        self._write_cmd(self.regs['MADCTL'])   # Memory Access Control
+        self._write_cmd(ILI._regs['MADCTL'])   # Memory Access Control
+        # Portrait:
         # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
-        self._write_data(0x48)
+        # OR Landscape:
+        # | MY=0 | MX=0 | MV=1 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
+        data = 0x48 if ILI._portrait else 0x28
+        self._write_data(data)
+
+    def _char_orientation(self):
+        self._write_cmd(ILI._regs['MADCTL'])   # Memory Access Control
+        # Portrait:
+        # | MY=1 | MX=1 | MV=1 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
+        # OR Landscape:
+        # | MY=0 | MX=1 | MV=1 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
+        data = 0xE8 if ILI._portrait else 0x58
+        self._write_data(data)
 
     def _image_orientation(self):
-        self._write_cmd(self.regs['MADCTL'])   # Memory Access Control
+        self._write_cmd(ILI._regs['MADCTL'])   # Memory Access Control
+        # Portrait:
         # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
-        self._write_data(0xC8)
+        # OR Landscape:
+        # | MY=0 | MX=1 | MV=0 | ML=1 | BGR=1 | MH=1 | 0 | 0 |
+        data = 0xC8 if ILI._portrait else 0x68
+        self._write_data(data)
 
     def _set_window(self, x0, y0, x1, y1):
         # Column Address Set
-        self._write_cmd(self.regs['CASET'])
+        self._write_cmd(ILI._regs['CASET'])
         self._write_words(((x0>>8) & 0xFF, x0 & 0xFF, (y0>>8) & 0xFF, y0 & 0xFF))
         # Page Address Set
-        self._write_cmd(self.regs['PASET'])
+        self._write_cmd(ILI._regs['PASET'])
         self._write_words(((x1>>8) & 0xFF, x1 & 0xFF, (y1>>8) & 0xFF, y1 & 0xFF))
         # Memory Write
-        self._write_cmd(self.regs['RAMWR'])
+        self._write_cmd(ILI._regs['RAMWR'])
 
     def _get_Npix_monoword(self, color):
         if color == WHITE:
@@ -167,7 +205,7 @@ class BaseDraw(ILI):
     # Method writed by MCHobby https://github.com/mchobby
     # TODO:
     # 1. support border > 1
-    def drawLine(self, x,y,x1,y1, color ):
+    def drawLine(self, x, y, x1, y1, color):
         if x==x1:
             self.drawVline( x, y if y<=y1 else y1, abs(y1-y), color )
         elif y==y1:
@@ -280,9 +318,9 @@ class BaseDraw(ILI):
         for i in range(startangle, degrees):
             X = self._get_x_perimeter_point(x, i, radius)
             Y = self._get_y_perimeter_point(y, i, radius)
-            if i == 90: X = X-1
+            if   i == 90:  X = X-1
             elif i == 180: Y = Y-1
-            self.drawHline(X, Y, border, color, width=border)
+            self.drawRect(X, Y, border, border, color, border=0)
 
     def drawOvalFilled(self, x, y, xradius, yradius, color):
         tempY = 0
@@ -627,7 +665,7 @@ if __name__ == '__main__':
 
     starttime = pyb.micros()//1000
 
-    d = LCD()
+    d = LCD() # or d = LCD(portrait=False) for landscape
     d.fillMonocolor(GREEN)
     d.drawRect(5, 5, 230, 310, BLUE, border=10, fillcolor=ORANGE)
     d.drawOvalFilled(120, 160, 60, 120, BLUE)
