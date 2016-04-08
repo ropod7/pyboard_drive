@@ -149,7 +149,7 @@ class ILI:
         # Portrait:
         # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
         # OR Landscape:
-        # | MY=0 | MX=1 | MV=0 | ML=1 | BGR=1 | MH=1 | 0 | 0 |
+        # | MY=0 | MX=1 | MV=0 | ML=1 | BGR=1 | MH=0 | 0 | 0 |
         data = 0xC8 if ILI._portrait else 0x68
         self._write_data(data)
 
