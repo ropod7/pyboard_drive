@@ -16,7 +16,7 @@
 #    width is 320px
 #    height is 240px
 #
-# Template for orientation management by Accel:
+# Template method for orientation management by Accel:
 #    Changing mode on the air by calling:
 #    lcd.setPortrait( True [or False] )
 
@@ -28,6 +28,7 @@ import array
 import pyb, micropython
 from pyb import SPI, Pin
 
+from decorators import dimensions
 from fonts import Arial_14
 from registers import regs
 from colors import *
@@ -44,18 +45,21 @@ rate = 42000000
 
 class ILI:
     _cnt  = 0
+    _regs = dict()
     _spi  = object()
     _rst  = object()
     _csx  = object()
     _dcx  = object()
-    _regs = dict()
     _portrait  = True
-    _tftwidth  = 240
-    _tftheight = 320
+
+    _tftwidth  = 240    # TFT width Constant
+    _tftheight = 320    # TFT height Constant
+
+    _curwidth  = 240   # Current TFT width
+    _curheight = 320   # Current TFT height
 
     def __init__(self, rstPin='X3', csxPin='X4', dcxPin='X5', port=1, rate=rate,
                 chip='ILI9341', portrait=True):
-
         if ILI._cnt == 0:
             ILI._regs = regs[chip]
             ILI._spi  = SPI(port, SPI.MASTER, baudrate=rate, polarity=1, phase=1)
@@ -80,11 +84,11 @@ class ILI:
 
     def _setWH(self):
         if ILI._portrait:
-            self.TFTHEIGHT = ILI._tftheight
-            self.TFTWIDTH  = ILI._tftwidth
+            ILI._curheight = self.TFTHEIGHT = ILI._tftheight
+            ILI._curwidth  = self.TFTWIDTH  = ILI._tftwidth
         else:
-            self.TFTHEIGHT = ILI._tftwidth
-            self.TFTWIDTH  = ILI._tftheight
+            ILI._curheight = self.TFTHEIGHT = ILI._tftwidth
+            ILI._curwidth  = self.TFTWIDTH  = ILI._tftheight
         self._graph_orientation()
 
     def _initILI(self):
@@ -522,7 +526,8 @@ class BaseImages(ILI):
 
     # TODO:
     # 1. resize large images to screen resolution
-    # 2. if part of image goes out of screen, render only displayed part
+    # 2. if part of image goes out of the screen, must to be rendered
+    # only displayed part
     def renderBmp(self, filename, pos=None, cached=True, bgcolor=None):
         self._image_orientation()
         if bgcolor:
@@ -591,7 +596,6 @@ class BaseTests(BaseDraw, BaseChars, BaseImages):
         for image in os.listdir(path):
             if image != cpath and image.endswith('bmp'):
                 self.renderBmp(image, cached=cached, bgcolor=BLACK)
-            #pyb.delay(1000)
         return (pyb.micros()//1000-starttime)/1000
 
 class BaseWidgets(BaseTests):
@@ -611,6 +615,9 @@ class LCD(BaseObjects):
 
     def reset(self):
         super(LCD, self).reset()
+
+    def setPortrait(self, *args):
+        super(LCD, self).setPortrait(*args)
 
     def drawPixel(self, *args, **kwargs):
         super(LCD, self).drawPixel(*args, **kwargs)
@@ -655,6 +662,8 @@ class LCD(BaseObjects):
             obj.renderBmp(f, [(tuple or list of x, y), cached or not, bgcolor or None])
         Without position definition image renders in center of screen:
             obj.renderBmp(f, [cached or not, bgcolor or None])
+        By default method renders cached image, but only if BMP image cached
+        before. For image caching see: lcd.cacheImage()
         """
         super(LCD, self).renderBmp(*args, **kwargs)
 
