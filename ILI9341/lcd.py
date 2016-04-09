@@ -6,14 +6,19 @@
 # 16-bit RGB Color (R:5-bit; G:6-bit; B:5-bit)
 # About 30Hz monocolor screen refresh
 #
-# Default is portrait oriented:
+# Default is portrait mode:
 # lcd = LCD( [ portrait = True ] )
 #    width is 240px
 #    height is 320px
 #
+# Setup landscape mode:
 # lcd = LCD( portrait = False )
 #    width is 320px
 #    height is 240px
+#
+# Template for orientation management by Accel:
+#    Changing mode on the air by calling:
+#    lcd.setPortrait( True [or False] )
 
 import os
 import struct
@@ -44,28 +49,23 @@ class ILI:
     _csx  = object()
     _dcx  = object()
     _regs = dict()
-    _portrait = True
+    _portrait  = True
+    _tftwidth  = 240
+    _tftheight = 320
 
     def __init__(self, rstPin='X3', csxPin='X4', dcxPin='X5', port=1, rate=rate,
-            chip='ILI9341', height=320, width=240, portrait=True):
+                chip='ILI9341', portrait=True):
 
         if ILI._cnt == 0:
             ILI._regs = regs[chip]
-            ILI._spi  = SPI(port, SPI.MASTER, baudrate=rate, polarity=1, phase=1, bits=8)
+            ILI._spi  = SPI(port, SPI.MASTER, baudrate=rate, polarity=1, phase=1)
             ILI._rst  = Pin(rstPin, Pin.OUT_PP)    # Reset Pin
             ILI._csx  = Pin(csxPin, Pin.OUT_PP)    # CSX Pin
             ILI._dcx  = Pin(dcxPin, Pin.OUT_PP)    # D/Cx Pin
-            self.setPortrait(portrait)
             self.reset()
             self._initILI()
 
-        if ILI._portrait:
-            self.TFTHEIGHT = height
-            self.TFTWIDTH = width
-        else:
-            self.TFTHEIGHT = width
-            self.TFTWIDTH = height
-
+        self.setPortrait(portrait)
         ILI._cnt += 1
 
     def reset(self):
@@ -74,7 +74,18 @@ class ILI:
         ILI._rst.high()               #
 
     def setPortrait(self, portrait):
-        ILI._portrait = portrait
+        if ILI._portrait != portrait:
+            ILI._portrait = portrait
+        self._setWH()
+
+    def _setWH(self):
+        if ILI._portrait:
+            self.TFTHEIGHT = ILI._tftheight
+            self.TFTWIDTH  = ILI._tftwidth
+        else:
+            self.TFTHEIGHT = ILI._tftwidth
+            self.TFTWIDTH  = ILI._tftheight
+        self._graph_orientation()
 
     def _initILI(self):
         self._write_cmd(ILI._regs['LCDOFF'])   # Display OFF
@@ -346,7 +357,7 @@ class BaseChars(ILI, BaseDraw):
         self._bctimes = bctimes    # blink carriage times
 
     def initCh(self, **kwargs):
-        ch = BaseChars(**kwargs)
+        ch = BaseChars(portrait=ILI._portrait, **kwargs)
         return ch
 
     @staticmethod
@@ -445,16 +456,13 @@ class BaseImages(ILI):
     @staticmethod
     @micropython.asm_thumb
     def _reverse(r0, r1):               # bytearray, len(bytearray)
-
         b(loopend)
-
         label(loopstart)
         ldrb(r2, [r0, 0])
         ldrb(r3, [r0, 1])
         strb(r3, [r0, 0])
         strb(r2, [r0, 1])
         add(r0, 2)
-
         label(loopend)
         sub (r1, 2)  # End of loop?
         bpl(loopstart)
@@ -462,7 +470,7 @@ class BaseImages(ILI):
     def _set_image_headers(self, f):
         headers = list()
         if f.read(2) != b'BM':
-            raise OSError('Not valid BMP image')
+            raise OSError('Not a valid BMP image')
         for pos in (10, 18, 22):                                 # startbit, width, height
             f.seek(pos)
             headers.append(struct.unpack('<H', f.read(2))[0])    # read double byte
@@ -476,7 +484,7 @@ class BaseImages(ILI):
             y = 0 if height == self.TFTHEIGHT else (self.TFTHEIGHT-height)//2
         return x, y
 
-    # Using in render_bmp function
+    # Using in renderBmp method
     def _render_bmp_image(self, filename, pos):
         path = 'images/'
         memread = 480
@@ -494,7 +502,7 @@ class BaseImages(ILI):
                     self._write_data(data)
                 except OSError: break
 
-    # Using in render_bmp function
+    # Using in renderBmp method
     def _render_bmp_cache(self, filename, pos):
         filename = filename + '.cache'
         startbit = 8
@@ -568,6 +576,7 @@ class BaseTests(BaseDraw, BaseChars, BaseImages):
         ch = self.initCh(color=color, font=font, bgcolor=bgcolor, scale=scale)
         scale = 2 if scale > 1 else 1
         x = y = 7 * scale
+        print(self.TFTHEIGHT)
         for i in range(33, 128):
             chrwidth = len(font[str(i)])
             cont = False if i == 127 else True
@@ -669,7 +678,7 @@ if __name__ == '__main__':
     d.fillMonocolor(GREEN)
     d.drawRect(5, 5, 230, 310, BLUE, border=10, fillcolor=ORANGE)
     d.drawOvalFilled(120, 160, 60, 120, BLUE)
-    d.drawCircleFilled(120, 160, 60, RED)
+    d.drawCircleFilled(120, 160, 55, RED)
     d.drawCircle(120, 160, 59, GREEN, border=5)
 
     c = d.initCh(color=BLACK, bgcolor=ORANGE)        # define string obj
@@ -678,17 +687,10 @@ if __name__ == '__main__':
     c.printLn('Hello BaseChar class', 30, 290)
     p.printLn('Python3', 89, 155)
 
-    pyb.delay(500)
+    d.setPortrait(False)    # Changing mode to landscape
+    d.renderBmp("test.bmp", (0, 0))
 
-    image_caching_demo()
 
-    d.fillMonocolor(WHITE)
-    d.charsTest(BLACK)
-    pyb.delay(500)
-    d.renderImageTest()
-    pyb.delay(500)
-    d.fillMonocolor(BLACK)
-    d.renderBmp('MP_powered.bmp')
 
     # last time executed in: 1.379 seconds
     print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
