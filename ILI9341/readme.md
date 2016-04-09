@@ -50,4 +50,4 @@ This section will describe the arrangement of the main directories.
 
 # About the author
 
-Roman, you should leave some text here.
+I am just hobbyist in Python and DIY electronics. :)
