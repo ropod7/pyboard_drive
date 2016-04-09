@@ -1,4 +1,4 @@
-== TFT Touch Shield ==
+# TFT Touch Shield
 The TFT-Touch-Shield is an Arduino product produced by AdaFruit industries USA [2.8" TFT Touch Shield for Arduino with Resistive Touch Screen](https://www.adafruit.com/products/1651). This product is widelyyyyy distribued in the world.
 
 The main feature are:
@@ -7,7 +7,7 @@ The main feature are:
 
 ***PLEASE NOTE:*** presently (on april 9, 2016) the driver does not support any touch interface.
 
-== Wiring ==
+# Wiring
 
 ![TFT Touch Shield wired on PyBoard]((https://github.com/mchobby/pyboard_drive/blob/master/ILI9341/wirings/tft-touch-shield/wiring.jpg "TFT Touch Shield wired on PyBoard")
 
