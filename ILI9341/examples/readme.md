@@ -10,6 +10,7 @@ The examples are structured as follows:
 First of all, you have to copy the driver code on your MicroPython Pyboard board.
 
 All the driver files must be present in the root of your pyboard drive. Those files are presently:
+
 1. colors.py, lcd.py, registers.py and also fonts.py
 2. \images\ folder (required if you want to display pictures. pictures must be stored under \images\ )  
 
