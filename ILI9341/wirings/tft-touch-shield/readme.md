@@ -9,7 +9,7 @@ The main feature are:
 
 # Wiring
 
-![TFT Touch Shield wired on PyBoard](https://github.com/mchobby/pyboard_drive/blob/master/ILI9341/wirings/tft-touch-shield/wiring.jpg "TFT Touch Shield wired on PyBoard")
+![TFT Touch Shield wired on PyBoard](https://raw.githubusercontent.com/mchobby/pyboard_drive/master/ILI9341/wirings/tft-touch-shield/wiring.jpg "TFT Touch Shield wired on PyBoard")
 
 The high resolution wiring is [available here on wiki.mchobby.be](http://wiki.mchobby.be/index.php?title=MicroPython-ILI9341-Brancher)
 
