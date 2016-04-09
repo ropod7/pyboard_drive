@@ -1,5 +1,5 @@
 # If you did read the "About Color" file, you do know that color must be coded with RGB565
-#    5 bit for Green, 6 bit for green, 5 bit for red.
+#    5 bit for Red, 6 bit for Green, 5 bit for Blue.
 #
 # Most common RGB coding is using RGB888 (8 bits for each color)
 #
