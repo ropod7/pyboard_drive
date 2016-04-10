@@ -29,7 +29,6 @@ import pyb, micropython
 from pyb import SPI, Pin
 
 from decorators import dimensions
-from fonts import Arial_14
 from registers import regs
 from colors import *
 
@@ -351,11 +350,15 @@ class BaseDraw(ILI):
             tempY = Y
 
 class BaseChars(ILI, BaseDraw):
-    def __init__(self, color=BLACK, font=Arial_14, bgcolor=WHITE, scale=1,
+    def __init__(self, color=BLACK, font=None, bgcolor=WHITE, scale=1,
                 bctimes=7, **kwargs):
         super(BaseChars, self).__init__(**kwargs)
         self._fontColor = color
-        self._font = font
+        if font:
+            self._font = font
+        else:
+            raise ValueError("""Font not defined. Define font using argument:
+                lcd.initCh(font=fontname, **kwargs)""")
         self._bgcolor = bgcolor
         self._fontscale = scale
         self._bctimes = bctimes    # blink carriage times
@@ -385,8 +388,6 @@ class BaseChars(ILI, BaseDraw):
         words = bytes(words, 'ascii').replace(b'0', bgpixel).replace(b'1', pixel)
         self._write_data(words)
 
-    # TODO:
-    # 1. Realize fonts caching:
     def printChar(self, char, x, y, cont=False, scale=None):
         if not scale:
             scale = self._fontscale
@@ -577,13 +578,13 @@ class BaseTests(BaseDraw, BaseChars, BaseImages):
     def __init__(self, **kwargs):
         super(BaseTests, self).__init__(**kwargs)
 
-    def charsTest(self, color, font=Arial_14, bgcolor=WHITE, scale=1):
+    def charsTest(self, color, font=None, bgcolor=WHITE, scale=1):
         ch = self.initCh(color=color, font=font, bgcolor=bgcolor, scale=scale)
         scale = 2 if scale > 1 else 1
         x = y = 7 * scale
-        print(self.TFTHEIGHT)
-        for i in range(33, 128):
-            chrwidth = len(font[str(i)])
+        for i in range(33, 256):
+            try: chrwidth = len(font[str(i)])
+            except KeyError: break
             cont = False if i == 127 else True
             ch.printChar(chr(i), x, y, cont=cont, scale=scale)
             x += self._asm_get_charpos(chrwidth, scale, 3)
@@ -679,8 +680,29 @@ class LCD(BaseObjects):
     def renderImageTest(self, *args, **kwargs):
         return super(LCD, self).renderImageTest(*args, **kwargs)
 
-if __name__ == '__main__':
 
+#def set_word_length_old(word, height=14):
+    #word = bin(word)[2:]
+    #word = word + '0' if len(word) < height else word
+    #if len(word) < height:
+        #word = '0'*(height-len(word)) + word
+
+    #print(hex(int('0b1' + word)))
+    #return word
+
+## optimize:
+#def lcd_fill_bicolor_old(data, x, y, width, height, color, bgcolor=WHITE, scale=1):
+    #lcd_set_window(x, x+height-1, y, y+width-1)
+    #bgpixel = get_Npix_monoword(bgcolor, pixels=1)
+    #pixel = get_Npix_monoword(color, pixels=1)
+    #words = ''.join(map(set_word_length_old, data))
+    #words = bytes(words, 'ascii').replace(b'0', bgpixel).replace(b'1', pixel)
+    #lcd_write_data(words)
+
+if __name__ == '__main__':
+    from fonts.arial_14 import Arial_14
+    from fonts.vera_14 import Vera_14
+    
     starttime = pyb.micros()//1000
 
     d = LCD() # or d = LCD(portrait=False) for landscape
@@ -690,8 +712,8 @@ if __name__ == '__main__':
     d.drawCircleFilled(120, 160, 55, RED)
     d.drawCircle(120, 160, 59, GREEN, border=5)
 
-    c = d.initCh(color=BLACK, bgcolor=ORANGE)        # define string obj
-    p = d.initCh(color=BLACK, bgcolor=RED, scale=2)  # define string obj
+    c = d.initCh(color=BLACK, bgcolor=ORANGE, font=Vera_14)         # define string obj
+    p = d.initCh(color=BLACK, bgcolor=RED, font=Arial_14, scale=2)  # define string obj
     c.printChar('@', 30, 30)
     c.printLn('Hello BaseChar class', 30, 290)
     p.printLn('Python3', 89, 155)
