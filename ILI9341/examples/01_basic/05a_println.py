@@ -6,6 +6,7 @@
 #   * Draw from position (x,y)
 #
 from lcd import *
+from fonts.arial_14 import Arial_14
 import pyb
 
 l = LCD( rate=21000000 ) # step down the SPI bus speed to 21 MHz may be opportune when using 150+ mm wires
@@ -19,7 +20,7 @@ l.fillMonocolor( CYAN )
 #   * scale: scale the font (1, 2, 3)
 #   * bctimes: number of time to blink the cursor (when requested) 
 #
-c = l.initCh(color=RED, bgcolor=CYAN)
+c = l.initCh(font=Arial_14, color=RED, bgcolor=CYAN)
 
 # Print the string at position x=10, y=10
 #   bc: False by default, allows to show the blinking cursor when the string is printed

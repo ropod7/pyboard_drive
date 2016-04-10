@@ -393,7 +393,7 @@ class BaseChars(ILI, BaseDraw):
             scale = self._fontscale
         font = self._font
         scale = 3 if scale > 3 else scale
-        index = str(ord(char))
+        index = ord(char)
         chrwidth = len(font[index])
         height = font['height']
         data   = font[index]
@@ -417,13 +417,13 @@ class BaseChars(ILI, BaseDraw):
                 y += (font['height']+2)*scale
             for i in range(lnword):
                 chpos = scale-(scale//2)
-                chrwidth = len(font[str(ord(word[i]))])
+                chrwidth = len(font[ord(word[i])])
                 cont = False if i == len(word)-1 else True
                 self.printChar(word[i], x, y, cont=cont, scale=scale)
                 if chrwidth == 1:
                     chpos = scale+1 if scale > 2 else scale-1
                 x += self._asm_get_charpos(chrwidth, chpos, 3)
-            x += self._asm_get_charpos(len(font['32']), chpos, 3)
+            x += self._asm_get_charpos(len(font[32]), chpos, 3)
         if bc:                                                    # blink carriage
             if (x + 2 * scale) >= (self.TFTWIDTH - 10):
                 x = X
@@ -583,7 +583,7 @@ class BaseTests(BaseDraw, BaseChars, BaseImages):
         scale = 2 if scale > 1 else 1
         x = y = 7 * scale
         for i in range(33, 256):
-            try: chrwidth = len(font[str(i)])
+            try: chrwidth = len(font[i])
             except KeyError: break
             cont = False if i == 127 else True
             ch.printChar(chr(i), x, y, cont=cont, scale=scale)

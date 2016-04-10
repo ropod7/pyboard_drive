@@ -3,6 +3,7 @@
 #
 #
 from lcd import *
+from fonts.arial_14 import Arial_14
 
 l = LCD( rate=21000000 ) # step down the SPI bus speed to 21 MHz may be opportune when using 150+ mm wires
 

@@ -18,7 +18,7 @@
 #    Arial 14 has 14 points height!
 #
 
-from fonts import * # Note: fonts.py is also imported by lcd.py
+from fonts.arial_14 import Arial_14 # Note: fonts.py is also imported by lcd.py
 
 c = 'A'
 print( "ASCII code for %s = ord('%s') = %i" % (c, c, ord(c) ) )
@@ -27,11 +27,11 @@ print( "ASCII code for %s = ord('%s') = %i" % (c, c, ord(c) ) )
 my_font = Arial_14
 
 print( 'Stored information for char %s' % c )
-print( my_font[ str(ord(c)) ] ) # The key in the dictionnary is '97'  
+print( my_font[ ord(c) ] ) # The key in the dictionnary is '97'  
 
 # Decoding a character in the font
 print( 'Lets decode the "%s" character information' % c )
-for value in my_font[ str(ord(c)) ]:
+for value in my_font[ ord(c) ]:
     print( bin( value ) )
 
 # About resulting value
