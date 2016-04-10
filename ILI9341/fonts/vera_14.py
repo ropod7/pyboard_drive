@@ -2,7 +2,6 @@
 # freetype-generator created by Meurisse D ( MCHobby.be ).
 
 Vera_14 = {
-    'width'  : 0xd,
     'height' : 0xf,
     '32' : ( 0x4000, ),
     '33' : ( 0xe7e0, ),
