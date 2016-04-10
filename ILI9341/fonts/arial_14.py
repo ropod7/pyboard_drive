@@ -1,5 +1,4 @@
 Arial_14 = {
-'width' :0x0D,
 'height':0x0E,
 32:(0x4000,),
 33:(0x4BFC,),
