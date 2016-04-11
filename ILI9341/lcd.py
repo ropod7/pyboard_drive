@@ -188,6 +188,18 @@ class ILI:
         word = struct.pack('>H', word)
         return word
 
+    @property
+    def font(self):
+        try:
+            return self._font
+        except AttributeError:
+            self._font = None
+            return self._font
+
+    @font.setter
+    def font(self, font):
+        self._font = font
+
 class BaseDraw(ILI):
     def __init__(self, **kwargs):
         super(BaseDraw, self).__init__(**kwargs)
@@ -283,7 +295,7 @@ class BaseDraw(ILI):
             pixels = width * 8
 
             word = self._get_Npix_monoword(fillcolor) * pixels
-            part = 1 if height < 20 else 7
+            part = 1 if height < 20 else 6
             i=0
             while i < (height//part):
                 self._write_data(word)
@@ -358,7 +370,7 @@ class BaseChars(ILI, BaseDraw):
             self._font = font
         else:
             raise ValueError("""Font not defined. Define font using argument:
-                lcd.initCh(font=fontname, **kwargs)""")
+                lcd.initCh(font=fontname, [ **kwargs ])""")
         self._bgcolor = bgcolor
         self._fontscale = scale
         self._bctimes = bctimes    # blink carriage times
@@ -393,6 +405,7 @@ class BaseChars(ILI, BaseDraw):
             scale = self._fontscale
         font = self._font
         scale = 3 if scale > 3 else scale
+        #index = str(ord(char))
         index = ord(char)
         chrwidth = len(font[index])
         height = font['height']
@@ -583,9 +596,11 @@ class BaseTests(BaseDraw, BaseChars, BaseImages):
         scale = 2 if scale > 1 else 1
         x = y = 7 * scale
         for i in range(33, 256):
-            try: chrwidth = len(font[i])
-            except KeyError: break
-            cont = False if i == 127 else True
+            try:
+                chrwidth = len(font[i])
+            except KeyError:
+                break
+            cont = False if i == 255 else True
             ch.printChar(chr(i), x, y, cont=cont, scale=scale)
             x += self._asm_get_charpos(chrwidth, scale, 3)
             if x > (self.TFTWIDTH-10):
@@ -603,13 +618,36 @@ class BaseWidgets(BaseTests):
 
     def __init__(self, **kwargs):
         super(BaseWidgets, self).__init__(**kwargs)
+    
+    # Useless method. Work in progress.
+    # use upper=True for strings in upper case
+    def widget(self, x, y, width, height, color, fillcolor, string, strcolor=BLACK,
+            border=1, strscale=1, font=None, upper=False):
+        self.font = font if font else None
+        width = width + border * 2
+        wrdcount = len(string.split(" "))
+        if upper:
+            string = string.upper()
+            upper = 2
+        # getting length of string
+        strlen = (len(string) + upper) * 8
+        # check container and redefine
+        if strlen > width:
+            if upper:
+                coeff = 0 if wrdcount == 1 else (15 + upper) * (wrdcount)
+                strlen += coeff
+            width = strlen + 10 + border * 2
 
-class BaseObjects(BaseWidgets):
+        self.drawRect(x, y, width, height, color, border=border, fillcolor=fillcolor)
+        # setting up string x and y point
+        strX = (width-strlen) // 2 + x
+        strY = (height-((self._font['height']-4)*strscale))//2 + y
+        strobj = self.initCh(font=font, color=strcolor, bgcolor=fillcolor, scale=strscale)
+        strobj.printLn(string, strX, strY)
+        x1, y1 = x+width, y+height
+        return x, y, x1, y1
 
-    def __init__(self, **kwargs):
-        super(BaseObjects, self).__init__(**kwargs)
-
-class LCD(BaseObjects):
+class LCD(BaseWidgets):
 
     def __init__(self, **kwargs):
         super(LCD, self).__init__(**kwargs)
@@ -657,15 +695,6 @@ class LCD(BaseObjects):
         super(LCD, self).printLn(*args, **kwargs)
 
     def renderBmp(self, *args, **kwargs):
-        """
-    Usage:
-        With position definition:
-            obj.renderBmp(f, [(tuple or list of x, y), cached or not, bgcolor or None])
-        Without position definition image renders in center of screen:
-            obj.renderBmp(f, [cached or not, bgcolor or None])
-        By default method renders cached image, but only if BMP image cached
-        before. For image caching see: lcd.cacheImage()
-        """
         super(LCD, self).renderBmp(*args, **kwargs)
 
     def clearImageCache(self, *args, **kwargs):
@@ -680,10 +709,14 @@ class LCD(BaseObjects):
     def renderImageTest(self, *args, **kwargs):
         return super(LCD, self).renderImageTest(*args, **kwargs)
 
+    def widget(self, *args, **kwargs):
+        return super(LCD, self).widget(*args, **kwargs)
+
 if __name__ == '__main__':
+
     from fonts.arial_14 import Arial_14
-    from fonts.vera_14  import Vera_14
-    
+    from fonts.vera_14 import Vera_14
+
     starttime = pyb.micros()//1000
 
     d = LCD() # or d = LCD(portrait=False) for landscape
