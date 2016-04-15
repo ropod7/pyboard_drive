@@ -20,19 +20,22 @@
 #    Changing mode on the air by calling:
 #    lcd.setPortrait( True [or False] )
 
+
 import os
 import struct
 import math
 import array
+import gc
 
 import pyb, micropython
 from pyb import SPI, Pin
 
-from decorators import dimensions
+#from decorators import dimensions
 from registers import regs
 from colors import *
 
 micropython.alloc_emergency_exception_buf(100)
+#gc.disable()
 
 imgcachedir = 'images/cache'
 if 'cache' not in os.listdir('images'):
@@ -70,6 +73,7 @@ class ILI:
 
         self.setPortrait(portrait)
         ILI._cnt += 1
+        self._gcCollect()
 
     def reset(self):
         ILI._rst.low()                #
@@ -80,6 +84,9 @@ class ILI:
         if ILI._portrait != portrait:
             ILI._portrait = portrait
         self._setWH()
+
+    def _gcCollect(self):
+        gc.collect()
 
     def _setWH(self):
         if ILI._portrait:
@@ -110,21 +117,48 @@ class ILI:
         pyb.delay(10)
         self._write_cmd(ILI._regs['RAMWR'])
 
-    def _write(self, word, dc, recv, recvsize=2):
+    def _write(self, word, dc, recv):
         dcs = ['cmd', 'data']
 
         DCX = dcs.index(dc) if dc in dcs else None
         ILI._csx.low()
         ILI._dcx.value(DCX)
         if recv:
-            fmt = '>B{0}'.format('B' * recvsize)
-            recv = bytearray(1+recvsize)
-            data = self.spi.send_recv(struct.pack(fmt, word), recv=recv)
+            fmt = '>BI'
+            recv = bytearray(5)
+            data = ILI._spi.send_recv(struct.pack(fmt, word), recv=recv)
             ILI._csx.high()
             return data
 
         ILI._spi.send(word)
         ILI._csx.high()
+
+    # for now decoded just recv color (or data readed from memory)
+    def _decode_recv_data(self, data):
+        # For example:
+        #    1. recieving sets 5 bytes
+        #    2. firs 2 of them are useless (or null bytes)
+        #    3. and just 3 last of them having a useful data:
+        #        - those 3 bytes are RGB bytes (if we are reading from memory)
+        #        - those 3 bytes have a 7 useful bits (and doesn't matter which color is)
+        #        - we must get from them:
+        #            * just 5 largest bits for R and B colors
+        #            * just 6 largest bits for G color
+        # next 2 lines sorting useful data
+        # getting 4 last bytes
+        data = struct.unpack('<BI', data)[1]
+        # reversing them
+        data = struct.pack('>I', data)
+        # getting just 3 bytes from bytearray as BGR
+        data = struct.unpack('>3B', data)
+        # with those 3 assignmentations we sorting useful bits for each color
+        red   = (((data[2]>>2) & 31) << 11)
+        green = (((data[1]>>1) & 63) << 5)
+        blue  = ((data[0]>>2) & 31)
+        # setting them to 16 bit color
+        data = red | green | blue
+        data = struct.pack('>H', data)
+        return data
 
     def _write_cmd(self, word, recv=None):
         data = self._write(word, 'cmd', recv)
@@ -362,7 +396,7 @@ class BaseDraw(ILI):
             tempY = Y
 
 class BaseChars(ILI, BaseDraw):
-    def __init__(self, color=BLACK, font=None, bgcolor=WHITE, scale=1,
+    def __init__(self, color=BLACK, font=None, bgcolor=None, scale=1,
                 bctimes=7, **kwargs):
         super(BaseChars, self).__init__(**kwargs)
         self._fontColor = color
@@ -385,18 +419,26 @@ class BaseChars(ILI, BaseDraw):
         mul(r0, r1)
         adc(r0, r2)
 
-    def _set_word_length(self, word):
-        return bin(word)[3:]
+    def _get_bgcolor(self, x, y):
+        self._set_window(x, x, y, y)
+        data = self._write_cmd(self._regs['RAMRD'], recv=True)
+        data = self._decode_recv_data(data)
+        return data
+
+    def _set_word_length(self, data):
+        return bin(data)[3:] * self._fontscale
 
     def _fill_bicolor(self, data, x, y, width, height, scale=None):
         if not scale:
             scale = self._fontscale
-        bgcolor = self._bgcolor
+        bgcolor = self._get_bgcolor(x, y) if not self._bgcolor else self._bgcolor
         color = self._fontColor
-        self._set_window(x, x+(height*scale)-1, y, y+(width*scale)-1)
-        bgpixel = self._get_Npix_monoword(bgcolor) * scale
+        self._set_window(x, x+(height*scale)-1, y, y+(width*scale))
+        bgpixel = bgcolor * scale
         pixel = self._get_Npix_monoword(color) * scale
         words = ''.join(map(self._set_word_length, data))
+        # Garbage collection
+        self._gcCollect()
         words = bytes(words, 'ascii').replace(b'0', bgpixel).replace(b'1', pixel)
         self._write_data(words)
 
@@ -404,13 +446,12 @@ class BaseChars(ILI, BaseDraw):
         if not scale:
             scale = self._fontscale
         font = self._font
-        scale = 3 if scale > 3 else scale
-        #index = str(ord(char))
+        self._fontscale = scale = 10 if scale > 10 else scale
         index = ord(char)
-        chrwidth = len(font[index])
+        chrwidth = len(font[index]) * scale
         height = font['height']
         data   = font[index]
-        X = self.TFTHEIGHT - y - (height*scale)+scale
+        X = self.TFTHEIGHT - y - (height*scale) + scale
         Y = x
         self._char_orientation()
         self._fill_bicolor(data, X, Y, chrwidth, height, scale=scale)
@@ -482,7 +523,7 @@ class BaseImages(ILI):
         strb(r2, [r0, 1])
         add(r0, 2)
         label(loopend)
-        sub (r1, 2)  # End of loop?
+        sub(r1, 2)  # End of loop?
         bpl(loopstart)
 
     def _set_image_headers(self, f):
@@ -498,7 +539,7 @@ class BaseImages(ILI):
         if isinstance(pos, (list, tuple)):
             x, y = pos
         else:
-            x = 0 if width == self.TFTWIDTH else (self.TFTWIDTH-width)//2
+            x = 0 if width  == self.TFTWIDTH else (self.TFTWIDTH-width)//2
             y = 0 if height == self.TFTHEIGHT else (self.TFTHEIGHT-height)//2
         return x, y
 
@@ -591,19 +632,20 @@ class BaseTests(BaseDraw, BaseChars, BaseImages):
     def __init__(self, **kwargs):
         super(BaseTests, self).__init__(**kwargs)
 
-    def charsTest(self, color, font=None, bgcolor=WHITE, scale=1):
+    def charsTest(self, color, font=None, bgcolor=None, scale=1):
         ch = self.initCh(color=color, font=font, bgcolor=bgcolor, scale=scale)
-        scale = 2 if scale > 1 else 1
-        x = y = 7 * scale
+        scale = 3 if scale > 2 else 1
+        x = y = 5
+        fwidth = font['width']
         for i in range(33, 256):
             try:
                 chrwidth = len(font[i])
             except KeyError:
-                break
+                continue
             cont = False if i == 255 else True
             ch.printChar(chr(i), x, y, cont=cont, scale=scale)
             x += self._asm_get_charpos(chrwidth, scale, 3)
-            if x > (self.TFTWIDTH-10):
+            if x > (self.TFTWIDTH-fwidth*scale):
                 x = 10
                 y = self._asm_get_charpos(font['height'], scale, y)
 
@@ -618,8 +660,9 @@ class BaseWidgets(BaseTests):
 
     def __init__(self, **kwargs):
         super(BaseWidgets, self).__init__(**kwargs)
-    
-    # Useless method. Work in progress.
+
+    # Реализовать замеры строки на базе двух переменных
+    # 1 - x1 первого символа строки. 2 - x2 второго символа строки.
     # use upper=True for strings in upper case
     def widget(self, x, y, width, height, color, fillcolor, string, strcolor=BLACK,
             border=1, strscale=1, font=None, upper=False):
@@ -695,6 +738,15 @@ class LCD(BaseWidgets):
         super(LCD, self).printLn(*args, **kwargs)
 
     def renderBmp(self, *args, **kwargs):
+        """
+    Usage:
+        With position definition:
+            obj.renderBmp(f, [(tuple or list of x, y), cached or not, bgcolor or None])
+        Without position definition image renders in center of screen:
+            obj.renderBmp(f, [cached or not, bgcolor or None])
+        By default method renders cached image, but only if BMP image cached
+        before. For image caching see: lcd.cacheImage()
+        """
         super(LCD, self).renderBmp(*args, **kwargs)
 
     def clearImageCache(self, *args, **kwargs):
@@ -714,7 +766,6 @@ class LCD(BaseWidgets):
 
 if __name__ == '__main__':
 
-    from fonts.arial_14 import Arial_14
     from fonts.vera_14 import Vera_14
 
     starttime = pyb.micros()//1000
@@ -726,11 +777,9 @@ if __name__ == '__main__':
     d.drawCircleFilled(120, 160, 55, RED)
     d.drawCircle(120, 160, 59, GREEN, border=5)
 
-    c = d.initCh(color=BLACK, bgcolor=ORANGE, font=Vera_14)         # define string obj
-    p = d.initCh(color=BLACK, bgcolor=RED, font=Arial_14, scale=2)  # define string obj
+    c = d.initCh(color=BLACK, font=Vera_14)         # define string obj
     c.printChar('@', 30, 30)
     c.printLn('Hello BaseChar class', 30, 290)
-    p.printLn('Python3', 89, 155)
 
     d.setPortrait(False)    # Changing mode to landscape
     d.renderBmp("test.bmp", (0, 0))
