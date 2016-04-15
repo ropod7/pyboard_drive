@@ -660,9 +660,8 @@ class BaseWidgets(BaseTests):
 
     def __init__(self, **kwargs):
         super(BaseWidgets, self).__init__(**kwargs)
-
-    # Реализовать замеры строки на базе двух переменных
-    # 1 - x1 первого символа строки. 2 - x2 второго символа строки.
+    
+    # it is useless method
     # use upper=True for strings in upper case
     def widget(self, x, y, width, height, color, fillcolor, string, strcolor=BLACK,
             border=1, strscale=1, font=None, upper=False):
