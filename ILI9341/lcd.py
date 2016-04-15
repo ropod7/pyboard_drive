@@ -764,25 +764,6 @@ class LCD(BaseWidgets):
     def widget(self, *args, **kwargs):
         return super(LCD, self).widget(*args, **kwargs)
 
-
-#def set_word_length_old(word, height=14):
-    #word = bin(word)[2:]
-    #word = word + '0' if len(word) < height else word
-    #if len(word) < height:
-        #word = '0'*(height-len(word)) + word
-
-    #print(hex(int('0b1' + word)))
-    #return word
-
-## optimize:
-#def lcd_fill_bicolor_old(data, x, y, width, height, color, bgcolor=WHITE, scale=1):
-    #lcd_set_window(x, x+height-1, y, y+width-1)
-    #bgpixel = get_Npix_monoword(bgcolor, pixels=1)
-    #pixel = get_Npix_monoword(color, pixels=1)
-    #words = ''.join(map(set_word_length_old, data))
-    #words = bytes(words, 'ascii').replace(b'0', bgpixel).replace(b'1', pixel)
-    #lcd_write_data(words)
-
 if __name__ == '__main__':
 
     from fonts.vera_14 import Vera_14
