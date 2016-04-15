@@ -20,7 +20,6 @@
 #    Changing mode on the air by calling:
 #    lcd.setPortrait( True [or False] )
 
-
 import os
 import struct
 import math
