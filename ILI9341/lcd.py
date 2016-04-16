@@ -21,7 +21,7 @@
 #    lcd.setPortrait( True [or False] )
 #
 # User do not need import fonts, them imports python code
-# Avaliable fonts are:
+# Avaliable fonts:
 #    Arial_14
 #    Vera_14
 #    VeraMono_14
@@ -29,7 +29,7 @@
 #    Heydings_23
 #
 #    define fonts by typing in string format:
-#    string = lcd.initCh(color=BLACK, font='Arial_14')
+#    string = lcd.initCh(color=(R,G,B), font='Arial_14')
 
 
 import os
@@ -426,13 +426,22 @@ class BaseChars(ILI, BaseDraw):
                     VeraMono_14
                     Vera_23
                     Heydings_23""")
-        self._bgcolor = bgcolor
+        self._portrait  = ILI._portrait
+        self._bgcolor   = bgcolor
         self._fontscale = scale
-        self._bctimes = bctimes    # blink carriage times
+        self._bctimes   = bctimes    # blink carriage times
 
     def initCh(self, **kwargs):
         ch = BaseChars(portrait=ILI._portrait, **kwargs)
         return ch
+
+    def _setWH(self):
+        if ILI._portrait:
+            self.TFTHEIGHT = ILI._tftheight
+            self.TFTWIDTH  = ILI._tftwidth
+        else:
+            self.TFTHEIGHT = ILI._tftwidth
+            self.TFTWIDTH  = ILI._tftheight
 
     @staticmethod
     @micropython.asm_thumb
@@ -467,7 +476,9 @@ class BaseChars(ILI, BaseDraw):
         if not scale:
             scale = self._fontscale
         font = self._font
-        self._fontscale = scale = 10 if scale > 10 else scale
+        if self.portrait != ILI._portrait:
+            self.portrait = ILI._portrait
+        self._fontscale = scale = 5 if scale > 5 else scale
         index = ord(char)
         height = font['height']
         try:
@@ -476,7 +487,7 @@ class BaseChars(ILI, BaseDraw):
         except KeyError:
             data = font['null']
             chrwidth = len(data) * scale
-        X = self.TFTHEIGHT - y - (height*scale) + scale
+        X = self.TFTHEIGHT - y - (height * scale) + scale
         Y = x
         self._char_orientation()
         # Garbage collection
@@ -493,9 +504,11 @@ class BaseChars(ILI, BaseDraw):
         scale = 3 if scale > 3 else scale
         for word in string.split(' '):
             lnword = len(word)
-            if (x + lnword*7*scale) >= (self.TFTWIDTH-10):
+            outofscreen = x + lnword * (font['width']-font['width']//3) * scale
+            if (outofscreen) >= (self.TFTWIDTH-10):
+                print(outofscreen)
                 x = X
-                y += (font['height']+2)*scale
+                y += (font['height'] + 2) * scale
             for i in range(lnword):
                 try:
                     chrwidth = len(font[ord(word[i])])
@@ -504,7 +517,7 @@ class BaseChars(ILI, BaseDraw):
                 cont = False if i == lnword-1 else True
                 self.printChar(word[i], x, y, cont=cont, scale=scale)
                 if chrwidth == 1:
-                    chpos = scale+1 if scale > 2 else scale-1
+                    chpos = scale + 1 if scale > 2 else scale - 1
                 else:
                     chpos = scale
                 x += self._asm_get_charpos(chrwidth, chpos, 3)
@@ -534,6 +547,15 @@ class BaseChars(ILI, BaseDraw):
             self.drawVline(x, y, height, bgcolor, width=width)
             pyb.delay(500)
             i+=1
+
+    @property
+    def portrait(self):
+        return self._portrait
+
+    @portrait.setter
+    def portrait(self, portrait):
+        self._portrait = portrait
+        self._setWH()
 
 class BaseImages(ILI):
 
@@ -595,7 +617,7 @@ class BaseImages(ILI):
     def _render_bmp_cache(self, filename, pos):
         filename = filename + '.cache'
         startbit = 8
-        memread = 240 * 80
+        memread = 240 * 70
         self._gcCollect()
         with open(imgcachedir + '/' + filename, 'rb') as f:
             width = struct.unpack('H', f.readline())[0]
@@ -722,7 +744,7 @@ class BaseWidgets(BaseTests):
 
     def __init__(self, **kwargs):
         super(BaseWidgets, self).__init__(**kwargs)
-
+    
     # work in progress
     # use upper=True for strings in upper case
     def widget(self, x, y, width, height, color, fillcolor, string, strcolor=BLACK,
@@ -836,6 +858,7 @@ if __name__ == '__main__':
 
     d.setPortrait(False)    # Changing mode to landscape
     d.renderBmp("test.bmp", (0, 0))
+    c.printLn('Hello portrait mode', 5, 5)
 
     # last time executed in: 1.379 seconds
     print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
