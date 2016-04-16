@@ -19,6 +19,17 @@
 # Template method for orientation management by Accel:
 #    Changing mode on the air by calling:
 #    lcd.setPortrait( True [or False] )
+#
+# User do not need import fonts, them imports python code
+# Avaliable fonts:
+#    Arial_14
+#    Vera_14
+#    VeraMono_14
+#    Vera_23
+#    Heydings_23
+#
+#    define fonts by typing in string format:
+#    string = lcd.initCh(color=(R,G,B), font='Arial_14')
 
 
 import os
@@ -396,22 +407,41 @@ class BaseDraw(ILI):
             tempY = Y
 
 class BaseChars(ILI, BaseDraw):
+    # to set importing
     def __init__(self, color=BLACK, font=None, bgcolor=None, scale=1,
                 bctimes=7, **kwargs):
         super(BaseChars, self).__init__(**kwargs)
         self._fontColor = color
         if font:
+            import fonts
+            font = fonts.importing(font)
             self._font = font
+            del(fonts)
         else:
-            raise ValueError("""Font not defined. Define font using argument:
-                lcd.initCh(font=fontname, [ **kwargs ])""")
-        self._bgcolor = bgcolor
+            raise ValueError("""Font not defined. Define font using:
+                lcd.initCh(font='fontname', color=(R,G,B), [ **kwargs ])
+                Avaliable fonts are:
+                    Arial_14
+                    Vera_14
+                    VeraMono_14
+                    Vera_23
+                    Heydings_23""")
+        self._portrait  = ILI._portrait
+        self._bgcolor   = bgcolor
         self._fontscale = scale
-        self._bctimes = bctimes    # blink carriage times
+        self._bctimes   = bctimes    # blink carriage times
 
     def initCh(self, **kwargs):
         ch = BaseChars(portrait=ILI._portrait, **kwargs)
         return ch
+
+    def _setWH(self):
+        if ILI._portrait:
+            self.TFTHEIGHT = ILI._tftheight
+            self.TFTWIDTH  = ILI._tftwidth
+        else:
+            self.TFTHEIGHT = ILI._tftwidth
+            self.TFTWIDTH  = ILI._tftheight
 
     @staticmethod
     @micropython.asm_thumb
@@ -446,14 +476,22 @@ class BaseChars(ILI, BaseDraw):
         if not scale:
             scale = self._fontscale
         font = self._font
-        self._fontscale = scale = 10 if scale > 10 else scale
+        if self.portrait != ILI._portrait:
+            self.portrait = ILI._portrait
+        self._fontscale = scale = 5 if scale > 5 else scale
         index = ord(char)
-        chrwidth = len(font[index]) * scale
         height = font['height']
-        data   = font[index]
-        X = self.TFTHEIGHT - y - (height*scale) + scale
+        try:
+            chrwidth = len(font[index]) * scale
+            data = font[index]
+        except KeyError:
+            data = font['null']
+            chrwidth = len(data) * scale
+        X = self.TFTHEIGHT - y - (height * scale) + scale
         Y = x
         self._char_orientation()
+        # Garbage collection
+        self._gcCollect()
         self._fill_bicolor(data, X, Y, chrwidth, height, scale=scale)
         if not cont:
             self._graph_orientation()
@@ -466,16 +504,22 @@ class BaseChars(ILI, BaseDraw):
         scale = 3 if scale > 3 else scale
         for word in string.split(' '):
             lnword = len(word)
-            if (x + lnword*7*scale) >= (self.TFTWIDTH-10):
+            outofscreen = x + lnword * (font['width']-font['width']//3) * scale
+            if (outofscreen) >= (self.TFTWIDTH-10):
+                print(outofscreen)
                 x = X
-                y += (font['height']+2)*scale
+                y += (font['height'] + 2) * scale
             for i in range(lnword):
-                chpos = scale-(scale//2)
-                chrwidth = len(font[ord(word[i])])
-                cont = False if i == len(word)-1 else True
+                try:
+                    chrwidth = len(font[ord(word[i])])
+                except (KeyError, IndexError):
+                    chrwidth = len(font['null'])
+                cont = False if i == lnword-1 else True
                 self.printChar(word[i], x, y, cont=cont, scale=scale)
                 if chrwidth == 1:
-                    chpos = scale+1 if scale > 2 else scale-1
+                    chpos = scale + 1 if scale > 2 else scale - 1
+                else:
+                    chpos = scale
                 x += self._asm_get_charpos(chrwidth, chpos, 3)
             x += self._asm_get_charpos(len(font[32]), chpos, 3)
         if bc:                                                    # blink carriage
@@ -504,6 +548,14 @@ class BaseChars(ILI, BaseDraw):
             pyb.delay(500)
             i+=1
 
+    @property
+    def portrait(self):
+        return self._portrait
+
+    @portrait.setter
+    def portrait(self, portrait):
+        self._portrait = portrait
+        self._setWH()
 
 class BaseImages(ILI):
 
@@ -546,7 +598,7 @@ class BaseImages(ILI):
     # Using in renderBmp method
     def _render_bmp_image(self, filename, pos):
         path = 'images/'
-        memread = 480
+        memread = 512
         with open(path + filename, 'rb') as f:
             startbit, width, height = self._set_image_headers(f)
             if width < self.TFTWIDTH:
@@ -565,10 +617,12 @@ class BaseImages(ILI):
     def _render_bmp_cache(self, filename, pos):
         filename = filename + '.cache'
         startbit = 8
-        memread = 512
+        memread = 240 * 70
+        self._gcCollect()
         with open(imgcachedir + '/' + filename, 'rb') as f:
             width = struct.unpack('H', f.readline())[0]
             height = struct.unpack('H', f.readline())[0]
+            print(filename, 'sizes:', str(width) + 'x' + str(height))
             if width < self.TFTWIDTH:
                 width -= 1
             x, y = self._get_image_points(pos, width, height)
@@ -578,6 +632,7 @@ class BaseImages(ILI):
                 try:
                     self._write_data(f.read(memread))
                 except OSError: break
+        self._gcCollect()
 
     # TODO:
     # 1. resize large images to screen resolution
@@ -585,13 +640,16 @@ class BaseImages(ILI):
     # only displayed part
     def renderBmp(self, filename, pos=None, cached=True, bgcolor=None):
         self._image_orientation()
+        self._gcCollect()
+        notcached = ''
         if bgcolor:
             self.fillMonocolor(bgcolor)
         if filename + '.cache' not in os.listdir('images/cache'):
-            cached = False
+            notcached = 'not cached'
         if cached:
             self._render_bmp_cache(filename, pos)
-        else:
+        elif not cached or notcached:
+            print(filename, 'image', notcached)
             self._render_bmp_image(filename, pos)
         self._graph_orientation()
 
@@ -602,17 +660,20 @@ class BaseImages(ILI):
 
     # TODO:
     # 1. resize large images to screen resolution
-    def cacheImage(self, image):
+    def cacheImage(self, image, imgdir='images'):
         self.fillMonocolor(BLACK)
-        strings = self.initCh(DARKGREY, bgcolor=BLACK)
+        strings = self.initCh(color=DARKGREY, font='Arial_14')
         strings.printLn("Caching:", 25, 25)
         strings.printLn(image + '...', 45, 45)
-        memread = 480
-        path = 'images/cache/'
-        with open('images/' + image, 'rb') as f:
+        memread = 60                                      # less memory write - more stable result
+        cachepath = imgdir + '/cache'
+        cachedimage = image + '.cache'
+        if cachedimage in os.listdir(cachepath):
+            os.remove(cachepath + '/' + cachedimage)
+        with open(imgdir + '/' + image, 'rb') as f:
             startbit, width, height = self._set_image_headers(f)
 
-            c = open(path + image + '.cache', 'ab')
+            c = open(cachepath + '/' + cachedimage, 'wb')
             for val in [width, height]:
                 c.write(bytes(array.array('H', [val])) + b"\n")
 
@@ -623,9 +684,27 @@ class BaseImages(ILI):
                     data = bytearray(f.read(memread))
                     self._reverse(data, len(data))
                     c.write(data)
-                except OSError: break
+                except OSError:
+                    break
             c.close()
+        self.fillMonocolor(BLACK)
+        strings.printLn(image + " cached", 25, 25)
         print('Cached:', image)
+        del(strings)
+        self._gcCollect()
+
+    def cacheAllImages(self, imgdir='images'):
+        if 'cache' not in os.listdir(imgdir):
+            os.chdir(imgdir)
+            os.mkdir('cache')
+            try:
+                os.chdir('/sd')
+            except OSError:
+                os.chdir('/flash')
+        for image in os.listdir(imgdir):
+            if image == 'cache': continue
+            self.cacheImage(image, imgdir=imgdir)
+            pyb.delay(100)            # delay for better and stable result
 
 class BaseTests(BaseDraw, BaseChars, BaseImages):
 
@@ -636,6 +715,7 @@ class BaseTests(BaseDraw, BaseChars, BaseImages):
         ch = self.initCh(color=color, font=font, bgcolor=bgcolor, scale=scale)
         scale = 3 if scale > 2 else 1
         x = y = 5
+        font = ch._font
         fwidth = font['width']
         for i in range(33, 256):
             try:
@@ -649,20 +729,23 @@ class BaseTests(BaseDraw, BaseChars, BaseImages):
                 x = 10
                 y = self._asm_get_charpos(font['height'], scale, y)
 
-    def renderImageTest(self, cached=True, path='images', cpath='cache'): # images/cache path
+    def renderImageTest(self, cached=True, path='images', cpath='cache', delay=0): # images/cache path
         starttime = pyb.micros()//1000
+        cachelist = os.listdir('images/cache')
+        print('cached images:', cachelist)
         for image in os.listdir(path):
             if image != cpath and image.endswith('bmp'):
                 self.renderBmp(image, cached=cached, bgcolor=BLACK)
+                if delay:
+                    pyb.delay(delay)
         return (pyb.micros()//1000-starttime)/1000
 
 class BaseWidgets(BaseTests):
 
     def __init__(self, **kwargs):
         super(BaseWidgets, self).__init__(**kwargs)
-
-    # Реализовать замеры строки на базе двух переменных
-    # 1 - x1 первого символа строки. 2 - x2 второго символа строки.
+    
+    # work in progress
     # use upper=True for strings in upper case
     def widget(self, x, y, width, height, color, fillcolor, string, strcolor=BLACK,
             border=1, strscale=1, font=None, upper=False):
@@ -738,15 +821,6 @@ class LCD(BaseWidgets):
         super(LCD, self).printLn(*args, **kwargs)
 
     def renderBmp(self, *args, **kwargs):
-        """
-    Usage:
-        With position definition:
-            obj.renderBmp(f, [(tuple or list of x, y), cached or not, bgcolor or None])
-        Without position definition image renders in center of screen:
-            obj.renderBmp(f, [cached or not, bgcolor or None])
-        By default method renders cached image, but only if BMP image cached
-        before. For image caching see: lcd.cacheImage()
-        """
         super(LCD, self).renderBmp(*args, **kwargs)
 
     def clearImageCache(self, *args, **kwargs):
@@ -754,6 +828,9 @@ class LCD(BaseWidgets):
 
     def cacheImage(self, *args, **kwargs):
         super(LCD, self).cacheImage(*args, **kwargs)
+
+    def cacheAllImages(self, *args, **kwargs):
+        super(LCD, self).cacheAllImages(*args, **kwargs)
 
     def charsTest(self, *args, **kwargs):
         super(LCD, self).charsTest(*args, **kwargs)
@@ -766,8 +843,6 @@ class LCD(BaseWidgets):
 
 if __name__ == '__main__':
 
-    from fonts.vera_14 import Vera_14
-
     starttime = pyb.micros()//1000
 
     d = LCD() # or d = LCD(portrait=False) for landscape
@@ -777,14 +852,13 @@ if __name__ == '__main__':
     d.drawCircleFilled(120, 160, 55, RED)
     d.drawCircle(120, 160, 59, GREEN, border=5)
 
-    c = d.initCh(color=BLACK, font=Vera_14)         # define string obj
+    c = d.initCh(color=BLACK, bgcolor=ORANGE, font='Arial_14') # define string obj
     c.printChar('@', 30, 30)
     c.printLn('Hello BaseChar class', 30, 290)
 
     d.setPortrait(False)    # Changing mode to landscape
     d.renderBmp("test.bmp", (0, 0))
-
-
+    c.printLn('Hello portrait mode', 5, 5)
 
     # last time executed in: 1.379 seconds
     print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
