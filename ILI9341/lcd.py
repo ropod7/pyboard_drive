@@ -267,9 +267,21 @@ class ILI:
         word = struct.pack('>H', word)
         return word
 
+    # Method writed by MCHobby https://github.com/mchobby
+    def rgbTo565(self, r, g, b):
+        """ Transform a RGB888 color color to RGB565 color tuple. """
+        return (r//8, g//4, b//8)
+
     @property
     def portrait(self):
         return ILI._portrait
+
+    @portrait.setter
+    def portrait(self, portr):
+        if isinstance(portr, bool):
+            ILI._portrait = portr
+        else:
+            raise ValueError('portrait setting must be a boolean')
 
 class BaseDraw(ILI):
     def __init__(self, **kwargs):
@@ -366,8 +378,8 @@ class BaseDraw(ILI):
             dborder = border*2
             self._set_window(xsum, xsum+width-dborder, ysum, ysum+height-dborder)
             # if MemoryError, try to set higher porsion value
-            porsion = 10
-            pixels = width * (height//porsion) if height >= 10 else width * height
+            porsion = 16
+            pixels = width * (height//porsion) if height >= 16 else width * height
             word = self._get_Npix_monoword(fillcolor) * pixels
             self._gcCollect()
             i=0
@@ -444,6 +456,7 @@ class BaseChars(ILI, BaseDraw):
         self._fontColor = color
         if font:
             import fonts
+            self._gcCollect()
             font = fonts.importing(font)
             self._font = font
             del(fonts)
@@ -495,7 +508,6 @@ class BaseChars(ILI, BaseDraw):
         self._gcCollect()
         words = bytes(words, 'ascii').replace(b'0', bgpixel).replace(b'1', pixel)
         self._write_data(words)
-        # test place
         self._graph_orientation()
 
     def printChar(self, char, x, y, scale=None):
@@ -518,7 +530,6 @@ class BaseChars(ILI, BaseDraw):
         self._char_orientation()
         # Garbage collection
         self._gcCollect()
-        # check rectangle graphics
         if data is None:
             self._graph_orientation()
             self.drawRect(x, y, height, chrwidth, self._fontColor, border=2*scale)
@@ -589,8 +600,11 @@ class BaseChars(ILI, BaseDraw):
         return self._portrait
 
     @portrait.setter
-    def portrait(self, portrait):
-        self._portrait = portrait
+    def portrait(self, portr):
+        if isinstance(portr, bool):
+            self._portrait = portr
+        else:
+            raise ValueError('portrait setting must be a boolean')
         self._setWH()
 
 class BaseImages(ILI):
@@ -780,13 +794,32 @@ class BaseTests(BaseDraw, BaseChars, BaseImages):
                     pyb.delay(delay)
         return (pyb.micros()//1000-starttime)/1000
 
+    def charsBGcolorTest(self, color=BLACK, font=None, scale=3):
+        if font is None:
+            raise ValueError('font is None. define font')
+        s = self.initCh(font=font, color=color, scale=scale)
+        x = self.TFTWIDTH//2 - (s.font['width']//2) * scale
+        y = self.TFTHEIGHT//2 - (s.font['height']//2) * scale
+        colors = [BLACK, NAVY, DARKGREEN, DARKCYAN, MAROON, PURPLE, OLIVE,
+                LIGHTGREY, DARKGREY, BLUE, GREEN, CYAN, RED, MAGENTA, YELLOW,
+                WHITE, ORANGE, GREENYELLOW]
+        j = 33
+        self._gcCollect()
+        for i in range((255-33)//16):
+            for clr in colors:
+                if isinstance(color, tuple) and color != clr:
+                    self.fillMonocolor(clr)
+                    s.printChar(chr(j), x, y)
+                    j += 1
+                    pyb.delay(100)
+
+
 class BaseWidgets(BaseTests):
 
     def __init__(self, **kwargs):
         super(BaseWidgets, self).__init__(**kwargs)
 
-    # Реализовать замеры строки на базе двух переменных
-    # 1 - x1 первого символа строки. 2 - x2 второго символа строки.
+    # WORK IN PROGRESS
     # use upper=True for strings in upper case
     def widget(self, x, y, width, height, color, fillcolor, string, strcolor=BLACK,
             border=1, strscale=1, font=None, upper=False):
