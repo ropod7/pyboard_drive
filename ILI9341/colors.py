@@ -19,7 +19,3 @@ YELLOW      = (31, 63, 0 )        # 255, 255,   0
 WHITE       = (31, 63, 31)        # 255, 255, 255
 ORANGE      = (31, 39, 0 )        # 255, 165,   0
 GREENYELLOW = (18, 63, 4 )        # 173, 255,  47
-
-def rgbTo565(r,g,b):
-    """ Transform a RGB888 color color to RGB565 color tuple. """ 
-    return (r//8, g//4, b//8)
