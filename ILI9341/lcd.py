@@ -819,8 +819,6 @@ class BaseWidgets(BaseTests):
     def __init__(self, **kwargs):
         super(BaseWidgets, self).__init__(**kwargs)
 
-    # Реализовать замеры строки на базе двух переменных
-    # 1 - x1 первого символа строки. 2 - x2 второго символа строки.
     # use upper=True for strings in upper case
     def widget(self, x, y, width, height, color, fillcolor, string, strcolor=BLACK,
             border=1, strscale=1, font=None, upper=False):
@@ -932,6 +930,7 @@ if __name__ == '__main__':
     c.printLn('Hello BaseChar class', 30, 290)
 
     d.setPortrait(False)    # Changing mode to landscape
+
     d.renderBmp("test.bmp", (0, 0))
 
     # last time executed in: 1.379 seconds
