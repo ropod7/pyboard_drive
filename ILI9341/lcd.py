@@ -668,7 +668,7 @@ class BaseImages(ILI):
     def _render_bmp_cache(self, filename, pos):
         filename = filename + '.cache'
         startbit = 8
-        memread = 1024 * 15
+        memread = 1024 * 10
         self._gcCollect()
         with open(imgcachedir + '/' + filename, 'rb') as f:
             width = struct.unpack('H', f.readline())[0]
