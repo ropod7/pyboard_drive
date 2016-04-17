@@ -22,8 +22,9 @@
 #
 # ATTENTION:
 #
-#    You will have PyBoard firmware >v1.7. This version give us more opportunities
-#    with reading from SD card. Earlier versions are useless in this driver scope.
+#    You will have PyBoard firmware >v1.7. This version give us more
+#    opportunities with reading from SD card. Earlier versions are useless
+#    in this driver scope.
 #
 # DESCRIPTION:
 #
@@ -66,7 +67,6 @@
 #    printing line:
 #        string.printLn('Hello, World', x, y, [scale=1])
 
-
 import os
 import struct
 import math
@@ -81,7 +81,6 @@ from registers import regs
 from colors import *
 
 micropython.alloc_emergency_exception_buf(100)
-#gc.disable()
 
 imgcachedir = 'images/cache'
 if 'cache' not in os.listdir('images'):
@@ -269,21 +268,6 @@ class ILI:
         return word
 
     @property
-    def font(self):
-        try:
-            return self._font
-        except AttributeError:
-            self._font = None
-            return self._font
-
-    @font.setter
-    def font(self, font):
-        import fonts
-        font = fonts.importing(font)
-        self._font = font
-        del(fonts)
-
-    @property
     def portrait(self):
         return ILI._portrait
 
@@ -355,6 +339,8 @@ class BaseDraw(ILI):
         border = 10 if border > 10 else border
         if width > self.TFTWIDTH: width = self.TFTWIDTH
         if height > self.TFTHEIGHT: height = self.TFTHEIGHT
+        height = 2 if height < 2 else height
+        width  = 2 if width  < 2 else width
         if border:
             if border > width//2:
                 border = width//2-1
@@ -379,12 +365,14 @@ class BaseDraw(ILI):
             ysum = y+border
             dborder = border*2
             self._set_window(xsum, xsum+width-dborder, ysum, ysum+height-dborder)
-            pixels = width * 8
-
+            # if MemoryError, try to set higher porsion value
+            porsion = 10
+            pixels = width * (height//porsion) if height >= 10 else width * height
             word = self._get_Npix_monoword(fillcolor) * pixels
-            part = 1 if height < 20 else 6
+            self._gcCollect()
             i=0
-            while i < (height//part):
+            times = 20 if height < 80 else porsion + 1
+            while i < (times):
                 self._write_data(word)
                 i+=1
 
@@ -532,7 +520,8 @@ class BaseChars(ILI, BaseDraw):
         self._gcCollect()
         # check rectangle graphics
         if data is None:
-            self.drawRect(X, Y, height, chrwidth, self._fontColor)
+            self._graph_orientation()
+            self.drawRect(x, y, height, chrwidth, self._fontColor, border=2*scale)
         else:
             self._fill_bicolor(data, X, Y, chrwidth, height, scale=scale)
 
@@ -585,6 +574,17 @@ class BaseChars(ILI, BaseDraw):
             i+=1
 
     @property
+    def font(self):
+        return self._font
+
+    @font.setter
+    def font(self, font):
+        import fonts
+        font = fonts.importing(font)
+        self._font = font
+        del(fonts)
+
+    @property
     def portrait(self):
         return self._portrait
 
@@ -599,7 +599,6 @@ class BaseImages(ILI):
         super(BaseImages, self).__init__(**kwargs)
 
     # solution from forum.micropython.org
-    # Need to be understandet
     @staticmethod
     @micropython.asm_thumb
     def _reverse(r0, r1):               # bytearray, len(bytearray)
@@ -786,7 +785,8 @@ class BaseWidgets(BaseTests):
     def __init__(self, **kwargs):
         super(BaseWidgets, self).__init__(**kwargs)
 
-    # WORK IN PROGRESS
+    # Реализовать замеры строки на базе двух переменных
+    # 1 - x1 первого символа строки. 2 - x2 второго символа строки.
     # use upper=True for strings in upper case
     def widget(self, x, y, width, height, color, fillcolor, string, strcolor=BLACK,
             border=1, strscale=1, font=None, upper=False):
