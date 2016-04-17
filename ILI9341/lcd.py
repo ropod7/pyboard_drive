@@ -668,7 +668,7 @@ class BaseImages(ILI):
     def _render_bmp_cache(self, filename, pos):
         filename = filename + '.cache'
         startbit = 8
-        memread = 1024 * 16
+        memread = 1024 * 15
         self._gcCollect()
         with open(imgcachedir + '/' + filename, 'rb') as f:
             width = struct.unpack('H', f.readline())[0]
@@ -812,6 +812,7 @@ class BaseTests(BaseDraw, BaseChars, BaseImages):
                     s.printChar(chr(j), x, y)
                     j += 1
                     pyb.delay(100)
+        self._gcCollect()
 
 
 class BaseWidgets(BaseTests):
