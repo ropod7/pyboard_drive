@@ -1,6 +1,7 @@
+#
 # The MIT License (MIT)
 # Copyright (c) 2016. Roman Podgaiski
-
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
@@ -269,9 +270,9 @@ class ILI:
         return word
 
     # Method writed by MCHobby https://github.com/mchobby
-    # Transform a RGB888 color color to RGB565 color tuple.
+    # Transform a RGB888 color to RGB565 color tuple.
     def rgbTo565(self, r, g, b):
-        return (r//8, g//4, b//8)
+        return (r>>3, g>>2, b>>3)
 
     @property
     def portrait(self):
@@ -355,6 +356,7 @@ class BaseDraw(ILI):
         if height > self.TFTHEIGHT: height = self.TFTHEIGHT
         height = 2 if height < 2 else height
         width  = 2 if width  < 2 else width
+        self._graph_orientation()
         if border:
             if border > width//2:
                 border = width//2-1
@@ -381,7 +383,7 @@ class BaseDraw(ILI):
             self._set_window(xsum, xsum+width-dborder, ysum, ysum+height-dborder)
             # if MemoryError, try to set higher porsion value
             portion = 16
-            pixels = width * (height//portion) if height >= 16 else width * height
+            pixels = width * (height//portion) if height >= 30 else width * height
             word = self._get_Npix_monoword(fillcolor) * pixels
             self._gcCollect()
             i=0
@@ -451,12 +453,10 @@ class BaseDraw(ILI):
             tempY = Y
 
 class BaseChars(ILI, BaseDraw):
-    # blink carriage is depricated
-    def __init__(self, color=BLACK, font=None, bgcolor=None, scale=1,
-                bctimes=7, **kwargs):
+    def __init__(self, color=BLACK, font=None, bgcolor=None, scale=1, **kwargs):
         super(BaseChars, self).__init__(**kwargs)
         self._fontColor = color
-        if font:
+        if font is not None:
             import fonts
             self._gcCollect()
             font = fonts.importing(font)
@@ -464,10 +464,9 @@ class BaseChars(ILI, BaseDraw):
             del(fonts)
         else:
             raise ValueError("font not defined")
-        self._portrait  = ILI._portrait
+        self._portrait = ILI._portrait
         self._bgcolor = bgcolor if bgcolor is None else self._get_Npix_monoword(bgcolor)
         self._fontscale = scale
-        self._bctimes   = bctimes    # blink carriage times (depricated)
 
     def initCh(self, **kwargs):
         ch = BaseChars(portrait=ILI._portrait, **kwargs)
@@ -539,6 +538,8 @@ class BaseChars(ILI, BaseDraw):
         else:
             self._fill_bicolor(data, X, Y, chrwidth, height, scale=scale)
 
+    # TODO:
+    # add split by new line
     def printLn(self, string, x, y, bc=False, scale=None):
         if scale is None:
             scale = self._fontscale
@@ -561,29 +562,6 @@ class BaseChars(ILI, BaseDraw):
                     chpos = scale
                 x += self._asm_get_charpos(chrwidth, chpos, 3)
             x += self._asm_get_charpos(len(font[32]), chpos, 3)
-        if bc:                                                    # blink carriage (depricated)
-            if (x + 2 * scale) >= (self.TFTWIDTH - 10):
-                x = X
-                y += (font['height'] + 2) * scale
-            else:
-                x -= 4 * scale//2
-            self._blinkCarriage(x, y, scale=scale)
-
-    # Blinking rectangular carriage on the end of line
-    def _blinkCarriage(self, x, y, scale=None):
-        font = self._font
-        bgcolor = self._bgcolor
-        color = self._fontColor
-        times = self._bctimes
-        height = font['height'] * scale
-        width = 2 * scale
-        i = 0
-        while i != times:
-            self.drawVline(x, y, height, color, width=width)
-            pyb.delay(500)
-            self.drawVline(x, y, height, bgcolor, width=width)
-            pyb.delay(500)
-            i+=1
 
     @property
     def font(self):
@@ -597,6 +575,10 @@ class BaseChars(ILI, BaseDraw):
         del(fonts)
 
     @property
+    def fontscale(self):
+        return self._fontscale
+
+    @property
     def portrait(self):
         return self._portrait
 
@@ -605,7 +587,7 @@ class BaseChars(ILI, BaseDraw):
         if isinstance(portr, bool):
             self._portrait = portr
         else:
-            raise ValueError('portrait setter must be a boolean')
+            raise ValueError('set portrait as boolean')
         self._setWH()
 
     @property
@@ -819,39 +801,55 @@ class BaseTests(BaseDraw, BaseChars, BaseImages):
                     pyb.delay(100)
         self._gcCollect()
 
+    # test shows as smooth screen refreshes
+    def rgbInfillTest(self):
+        red = green = blue = 0
+        for i in range(65536):
+            if red > 31:
+                red = 0
+            if green > 63:
+                green = 0
+            self.fillMonocolor((red, green, blue))
+            red += 1
+            if red == 32:
+                green += 1
+            if green == 64:
+                blue += 1
+                print(i, 'blue is', blue)
+
 
 class BaseWidgets(BaseTests):
 
     def __init__(self, **kwargs):
         super(BaseWidgets, self).__init__(**kwargs)
 
+    def _get_strwidth(self, char):
+        return len(self.font[ord(char)])
+
     # WORK IN PROGRESS
-    # use upper=True for strings in upper case
-    def widget(self, x, y, width, height, color, fillcolor, string, strcolor=BLACK,
-            border=1, strscale=1, font=None, upper=False):
-        self.font = font if font else None
-        width = width + border * 2
-        wrdcount = len(string.split(" "))
-        if upper:
-            string = string.upper()
-            upper = 2
-        else:
-            # check for upper case
-            pass
-        # getting length of string
-        strlen = (len(string) + upper) * 8
-        # check container and redefine
-        if strlen > width:
-            if upper:
-                coeff = 0 if wrdcount == 1 else (15 + upper) * (wrdcount)
-                strlen += coeff
-            width = strlen + 10 + border * 2
+    # Need test
+    def widget(self, x, y, width, height, color, fillcolor, string, strobj=None,
+            border=1):
+        if strobj is None:
+            raise ValueError('string object is None')
+        self._font = strobj.font
+        strscale = strobj.fontscale
+        strlen = len(string)
+        spaces = len(string.split(" ")) - 1
+        # getting width of string
+        strwidth = ((sum(map(self._get_strwidth, string)) + strlen*3) + spaces*2*3) * strscale
+        strheight = strobj.font['height'] * strscale
+        if strwidth > (width-5):
+            width = strwidth + 20 + border * 2
+        if strheight > height-5:
+            height = strheight + 10
+            print(height)
 
         self.drawRect(x, y, width, height, color, border=border, fillcolor=fillcolor)
         # setting up string x and y point
-        strX = (width-strlen) // 2 + x
-        strY = (height-((self._font['height']-4)*strscale))//2 + y
-        strobj = self.initCh(font=font, color=strcolor, bgcolor=fillcolor, scale=strscale)
+        strX = ((width - strwidth)>>1) + x
+        #self.drawVline(strX+strwidth, y, 20, BLACK)
+        strY = (height-((strobj.font['height']-4) * strscale))//2 + y
         strobj.printLn(string, strX, strY)
         x1, y1 = x+width, y+height
         return x, y, x1, y1
