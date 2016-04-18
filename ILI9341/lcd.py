@@ -1,4 +1,3 @@
-#
 # The MIT License (MIT)
 # Copyright (c) 2016. Roman Podgaiski
 
@@ -46,6 +45,8 @@
 # Template method for orientation management by Accel:
 #    Changing mode on the air by calling:
 #    lcd.setPortrait( True [or False] )
+#    OR:
+#    lcd.portrait = True [or False]
 #
 # User don't need to import fonts, they imports by python code
 # Avaliable fonts:
@@ -64,6 +65,8 @@
 #
 #    define fonts by typing in string format:
 #        string = lcd.initCh(color=(R,G,B), font='Arial_14', [scale=1])
+#    You may change string objects font by:
+#        string.font = 'Arial_14'
 #    printing line:
 #        string.printLn('Hello, World', x, y, [scale=1])
 
@@ -99,8 +102,8 @@ class ILI:
     _dcx  = object()
     _portrait  = True
 
-    _tftwidth  = 240    # TFT width Constant
-    _tftheight = 320    # TFT height Constant
+    _tftwidth  = 240   # TFT width Constant
+    _tftheight = 320   # TFT height Constant
 
     _curwidth  = 240   # Current TFT width
     _curheight = 320   # Current TFT height
@@ -266,8 +269,8 @@ class ILI:
         return word
 
     # Method writed by MCHobby https://github.com/mchobby
+    # Transform a RGB888 color color to RGB565 color tuple.
     def rgbTo565(self, r, g, b):
-        """ Transform a RGB888 color color to RGB565 color tuple. """
         return (r//8, g//4, b//8)
 
     @property
@@ -377,12 +380,12 @@ class BaseDraw(ILI):
             dborder = border*2
             self._set_window(xsum, xsum+width-dborder, ysum, ysum+height-dborder)
             # if MemoryError, try to set higher porsion value
-            porsion = 16
-            pixels = width * (height//porsion) if height >= 16 else width * height
+            portion = 16
+            pixels = width * (height//portion) if height >= 16 else width * height
             word = self._get_Npix_monoword(fillcolor) * pixels
             self._gcCollect()
             i=0
-            times = 20 if height < 80 else porsion + 1
+            times = 20 if height < 80 else portion + 1
             while i < (times):
                 self._write_data(word)
                 i+=1
@@ -460,8 +463,7 @@ class BaseChars(ILI, BaseDraw):
             self._font = font
             del(fonts)
         else:
-            raise ValueError("""Font not defined. Define font using:
-                lcd.initCh(font='fontname', color=(R,G,B), [ **kwargs ])""")
+            raise ValueError("font not defined")
         self._portrait  = ILI._portrait
         self._bgcolor = bgcolor if bgcolor is None else self._get_Npix_monoword(bgcolor)
         self._fontscale = scale
@@ -478,6 +480,11 @@ class BaseChars(ILI, BaseDraw):
         else:
             self.TFTHEIGHT = ILI._tftwidth
             self.TFTWIDTH  = ILI._tftheight
+        self._char_orientation()
+
+    def _check_portrait(self):
+        if self.portrait != ILI._portrait:
+            self.portrait = ILI._portrait
 
     @staticmethod
     @micropython.asm_thumb
@@ -495,8 +502,6 @@ class BaseChars(ILI, BaseDraw):
         return bin(data)[3:] * self._fontscale
 
     def _fill_bicolor(self, data, x, y, width, height, scale=None):
-        if not scale:
-            scale = self._fontscale
         bgcolor = self._get_bgcolor(x, y) if not self._bgcolor else self._bgcolor
         color = self._fontColor
         self._set_window(x, x+(height*scale)-1, y, y+(width*scale))
@@ -510,11 +515,10 @@ class BaseChars(ILI, BaseDraw):
         self._graph_orientation()
 
     def printChar(self, char, x, y, scale=None):
-        if not scale:
+        if scale is None:
             scale = self._fontscale
         font = self._font
-        if self.portrait != ILI._portrait:
-            self.portrait = ILI._portrait
+        self._check_portrait()
         self._fontscale = scale = 5 if scale > 5 else scale
         index = ord(char)
         height = font['height']
@@ -535,10 +539,10 @@ class BaseChars(ILI, BaseDraw):
         else:
             self._fill_bicolor(data, X, Y, chrwidth, height, scale=scale)
 
-
     def printLn(self, string, x, y, bc=False, scale=None):
-        if not scale:
+        if scale is None:
             scale = self._fontscale
+        self._check_portrait()
         font = self._font
         X, Y = x, y
         scale = 3 if scale > 3 else scale
@@ -567,8 +571,6 @@ class BaseChars(ILI, BaseDraw):
 
     # Blinking rectangular carriage on the end of line
     def _blinkCarriage(self, x, y, scale=None):
-        if not scale:
-            scale = self._fontscale
         font = self._font
         bgcolor = self._bgcolor
         color = self._fontColor
@@ -605,6 +607,10 @@ class BaseChars(ILI, BaseDraw):
         else:
             raise ValueError('portrait setter must be a boolean')
         self._setWH()
+
+    @property
+    def resolution(self):
+        print('width:  {0}px\nheight: {1}px'.format(self.TFTWIDTH, self.TFTHEIGHT))
 
 class BaseImages(ILI):
 
@@ -795,7 +801,7 @@ class BaseTests(BaseDraw, BaseChars, BaseImages):
 
     def charsBGcolorTest(self, color=BLACK, font=None, scale=3):
         if font is None:
-            raise ValueError('font is None. define font')
+            raise ValueError('font is not defined')
         s = self.initCh(font=font, color=color, scale=scale)
         x = self.TFTWIDTH//2 - (s.font['width']//2) * scale
         y = self.TFTHEIGHT//2 - (s.font['height']//2) * scale
@@ -819,6 +825,7 @@ class BaseWidgets(BaseTests):
     def __init__(self, **kwargs):
         super(BaseWidgets, self).__init__(**kwargs)
 
+    # WORK IN PROGRESS
     # use upper=True for strings in upper case
     def widget(self, x, y, width, height, color, fillcolor, string, strcolor=BLACK,
             border=1, strscale=1, font=None, upper=False):
@@ -828,6 +835,9 @@ class BaseWidgets(BaseTests):
         if upper:
             string = string.upper()
             upper = 2
+        else:
+            # check for upper case
+            pass
         # getting length of string
         strlen = (len(string) + upper) * 8
         # check container and redefine
