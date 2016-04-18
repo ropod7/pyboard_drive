@@ -126,9 +126,7 @@ class ILI:
         ILI._rst.high()               #
 
     def setPortrait(self, portrait):
-        if ILI._portrait != portrait:
-            ILI._portrait = portrait
-        self._setWH()
+        self.portrait = portrait
 
     def _gcCollect(self):
         gc.collect()
@@ -282,6 +280,7 @@ class ILI:
             ILI._portrait = portr
         else:
             raise ValueError('portrait setting must be a boolean')
+        self._setWH()
 
 class BaseDraw(ILI):
     def __init__(self, **kwargs):
@@ -604,7 +603,7 @@ class BaseChars(ILI, BaseDraw):
         if isinstance(portr, bool):
             self._portrait = portr
         else:
-            raise ValueError('portrait setting must be a boolean')
+            raise ValueError('portrait setter must be a boolean')
         self._setWH()
 
 class BaseImages(ILI):
