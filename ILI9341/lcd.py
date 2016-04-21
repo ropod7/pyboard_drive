@@ -366,12 +366,12 @@ class BaseDraw(ILI):
                 self.drawHline(X, Y, width, color, border)
 
                 if border > 1:
-                    Y = y+1
+                    Y = y + 1
                     H = height
                 else:
                     Y = y
                     H = height + 1
-                X = x+width-(border-1) if i == 1 else x
+                X = x + width - (border - 1) if i == 1 else x
                 self.drawVline(X, Y, H, color, border)
         else:
             fillcolor = color
@@ -381,16 +381,17 @@ class BaseDraw(ILI):
             ysum = y+border
             dborder = border*2
             self._set_window(xsum, xsum+width-dborder, ysum, ysum+height-dborder)
-            # if MemoryError, try to set higher porsion value
-            portion = 16
-            pixels = width * (height//portion+1) if height >= 16 else width * height
+            # if MemoryError, try to set higher portion value
+            portion = 20
+            pixels = width * (height//portion+1) if height >= portion else width * height
             word = self._get_Npix_monoword(fillcolor) * pixels
             self._gcCollect()
             i=0
-            times = 20 if height < portion+1 else portion + 1
+            times = 16 if height < portion+1 else portion + 1
             while i < (times):
                 self._write_data(word)
                 i+=1
+        self._gcCollect()
 
     def fillMonocolor(self, color, margin=0):
         margin = 80 if margin > 80 else margin
@@ -537,17 +538,19 @@ class BaseChars(ILI, BaseDraw):
 
     # TODO:
     # add split by new line
-    def printLn(self, string, x, y, bc=False, scale=None):
+    def printLn(self, string, x, y, bc=False, scale=None, strlen=None):
         if scale is None:
             scale = self._fontscale
+        # if typed string length higher than strlen, string printing in new line
+        strlen = self.TFTWIDTH-10 if strlen is None else strlen
         self._check_portrait()
         font = self._font
         X, Y = x, y
         scale = 3 if scale > 3 else scale
         for word in string.split(' '):
             lnword = len(word)
-            outofscreen = x + lnword * (font['width']-font['width']//3) * scale
-            if (outofscreen) >= (self.TFTWIDTH-10):
+            outofscreen = x + lnword * (font['width'] - font['width']//3) * scale
+            if (outofscreen) >= (strlen):
                 x = X
                 y += (font['height'] + 2) * scale
             for i in range(lnword):
@@ -798,6 +801,7 @@ class BaseTests(BaseDraw, Chars, BaseImages):
         if font is None:
             from exceptions import NoneTypeFont
             raise NoneTypeFont
+        self.portrait = True
         s = self.initCh(font=font, color=color, scale=scale)
         x = self.TFTWIDTH//2 - (s.font['width']//2) * scale
         y = self.TFTHEIGHT//2 - (s.font['height']//2) * scale
@@ -815,8 +819,8 @@ class BaseTests(BaseDraw, Chars, BaseImages):
                     pyb.delay(100)
         self._gcCollect()
 
-    # test shows as smooth screen refreshes
     def rgbInfillTest(self):
+        self.portrait = True
         red = green = blue = 0
         for i in range(65536):
             if red > 31:
@@ -831,21 +835,20 @@ class BaseTests(BaseDraw, Chars, BaseImages):
                 blue += 1
                 print(i, 'blue is', blue)
 
-    def rectInfillTest(self, portrait=True, strobj=None):
-        if strobj is None:
-            from exceptions import NoneStringObject
-            raise NoneStringObject
+    def rectInfillTest(self, portrait=True, border=1):
+        strobj = self.initCh(font='Arial_14', color=BLACK)
         prevportr = ILI._portrait
         if prevportr != portrait:
             self.portrait = portrait
         height = self.TFTHEIGHT
         width = self.TFTWIDTH
-        for i in range(3, height-40):
+        self._gcCollect()
+        for i in range(1+border*2, height-40):
             self.drawRect(0, 0, width, 30, DARKGREY, border=0)
             self.drawRect(0, 30, width, height-30, YELLOW, border=0)
-            string = 'height = {0}'.format(i)
-            self.label(5, 2, 50, 18, BLACK, LIGHTGREY, string, strobj=strobj)
-            self.drawRect(5, 35, width-10, i, BLUE, fillcolor=GREEN)
+            string = 'height = {0}px'.format(i)
+            self.label(5, 2, BLACK, LIGHTGREY, string, strobj=strobj)
+            self.drawRect(5, 35, width-10, i, BLUE, fillcolor=GREEN, border=border)
             pyb.delay(500)
         self.portrait = prevportr
 
@@ -859,8 +862,10 @@ class BaseWidgets(BaseTests):
 
     # WORK IN PROGRESS
     # Need test
-    def label(self, x, y, width, height, color, fillcolor, string, strobj=None,
-            border=1):
+    # TODO:
+    # 1. set height for multiply string lines if width is not defined
+    def label(self, x, y, color, fillcolor, string, width=None, height=None,
+                strobj=None, border=1):
         if strobj is None:
             from exceptions import NoneStringObject
             raise NoneStringObject
@@ -869,20 +874,21 @@ class BaseWidgets(BaseTests):
         strlen = len(string)
         spaces = len(string.split(" ")) - 1
         # getting width of string
-        strwidth = ((sum(map(self._get_strwidth, string)) + strlen*3) + spaces*2*3) * strscale
+        strwidth = sum(map(self._get_strwidth, string))
+        strwidth = ((strwidth + strlen*3) + spaces*2*3) * strscale
         strheight = strobj.font['height'] * strscale
-        if strwidth > (width-5):
+        if width is None:
             width = strwidth + 20 + border * 2
-        if strheight > height-5:
+        if height is None or strheight > height-5:
             height = strheight + 10
-            print(height)
+            #print(height)
 
         self.drawRect(x, y, width, height, color, border=border, fillcolor=fillcolor)
         # setting up string x and y point
         strX = ((width - strwidth)>>1) + x
         #self.drawVline(strX+strwidth, y, 20, BLACK)
         strY = (height-((strobj.font['height']-4) * strscale))//2 + y
-        strobj.printLn(string, strX, strY)
+        strobj.printLn(string, strX, strY, strlen=width)
         x1, y1 = x+width, y+height
         return x, y, x1, y1
 
