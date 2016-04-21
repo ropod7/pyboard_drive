@@ -847,6 +847,7 @@ class BaseTests(BaseDraw, Chars, BaseImages):
             self.label(5, 2, 50, 18, BLACK, LIGHTGREY, string, strobj=strobj)
             self.drawRect(5, 35, width-10, i, BLUE, fillcolor=GREEN)
             pyb.delay(500)
+        self.portrait = prevportr
 
 class BaseWidgets(BaseTests):
 
