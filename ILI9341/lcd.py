@@ -23,7 +23,7 @@
 # ATTENTION:
 #
 #    You will have PyBoard firmware >v1.7. This version give us more
-#    opportunities with reading from SD card. Earlier versions are useless
+#    opportunities of reading from SD card. Earlier versions are useless
 #    in this driver scope.
 #
 # DESCRIPTION:
@@ -283,7 +283,7 @@ class ILI:
         if isinstance(portr, bool):
             ILI._portrait = portr
         else:
-            raise ValueError('portrait setting must be a boolean')
+            raise PortraitError
         self._setWH()
 
 class BaseDraw(ILI):
@@ -383,11 +383,11 @@ class BaseDraw(ILI):
             self._set_window(xsum, xsum+width-dborder, ysum, ysum+height-dborder)
             # if MemoryError, try to set higher porsion value
             portion = 16
-            pixels = width * (height//portion) if height >= 30 else width * height
+            pixels = width * (height//portion+1) if height >= 16 else width * height
             word = self._get_Npix_monoword(fillcolor) * pixels
             self._gcCollect()
             i=0
-            times = 20 if height < 80 else portion + 1
+            times = 20 if height < portion+1 else portion + 1
             while i < (times):
                 self._write_data(word)
                 i+=1
@@ -463,14 +463,11 @@ class BaseChars(ILI, BaseDraw):
             self._font = font
             del(fonts)
         else:
-            raise ValueError("font not defined")
+            from exceptions import NoneTypeFont
+            raise NoneTypeFont
         self._portrait = ILI._portrait
         self._bgcolor = bgcolor if bgcolor is None else self._get_Npix_monoword(bgcolor)
         self._fontscale = scale
-
-    def initCh(self, **kwargs):
-        ch = BaseChars(portrait=ILI._portrait, **kwargs)
-        return ch
 
     def _setWH(self):
         if ILI._portrait:
@@ -562,37 +559,6 @@ class BaseChars(ILI, BaseDraw):
                     chpos = scale
                 x += self._asm_get_charpos(chrwidth, chpos, 3)
             x += self._asm_get_charpos(len(font[32]), chpos, 3)
-
-    @property
-    def font(self):
-        return self._font
-
-    @font.setter
-    def font(self, font):
-        import fonts
-        font = fonts.importing(font)
-        self._font = font
-        del(fonts)
-
-    @property
-    def fontscale(self):
-        return self._fontscale
-
-    @property
-    def portrait(self):
-        return self._portrait
-
-    @portrait.setter
-    def portrait(self, portr):
-        if isinstance(portr, bool):
-            self._portrait = portr
-        else:
-            raise ValueError('set portrait as boolean')
-        self._setWH()
-
-    @property
-    def resolution(self):
-        print('width:  {0}px\nheight: {1}px'.format(self.TFTWIDTH, self.TFTHEIGHT))
 
 class BaseImages(ILI):
 
@@ -747,7 +713,54 @@ class BaseImages(ILI):
             self.cacheImage(image, imgdir=imgdir)
             pyb.delay(100)            # delay for better and stable result
 
-class BaseTests(BaseDraw, BaseChars, BaseImages):
+class Chars(BaseChars):
+
+    def __init__(self, *args, **kwargs):
+        super(Chars, self).__init__(*args, **kwargs)
+
+    def initCh(self, **kwargs):
+        ch = Chars(portrait=ILI._portrait, **kwargs)
+        return ch
+
+    def printChar(self, *args, **kwargs):
+        super(Chars, self).printChar(*args, **kwargs)
+
+    def printLn(self, *args, **kwargs):
+        super(Chars, self).printLn(*args, **kwargs)
+
+    @property
+    def font(self):
+        return self._font
+
+    @font.setter
+    def font(self, font):
+        import fonts
+        font = fonts.importing(font)
+        self._font = font
+        del(fonts)
+
+    @property
+    def fontscale(self):
+        return self._fontscale
+
+    @property
+    def portrait(self):
+        return self._portrait
+
+    @portrait.setter
+    def portrait(self, portr):
+        if isinstance(portr, bool):
+            self._portrait = portr
+        else:
+            from exceptions import PortraitBoolError
+            raise PortraitBoolError
+        self._setWH()
+
+    @property
+    def resolution(self):
+        print('width:  {0}px\nheight: {1}px'.format(self.TFTWIDTH, self.TFTHEIGHT))
+
+class BaseTests(BaseDraw, Chars, BaseImages):
 
     def __init__(self, **kwargs):
         super(BaseTests, self).__init__(**kwargs)
@@ -783,7 +796,8 @@ class BaseTests(BaseDraw, BaseChars, BaseImages):
 
     def charsBGcolorTest(self, color=BLACK, font=None, scale=3):
         if font is None:
-            raise ValueError('font is not defined')
+            from exceptions import NoneTypeFont
+            raise NoneTypeFont
         s = self.initCh(font=font, color=color, scale=scale)
         x = self.TFTWIDTH//2 - (s.font['width']//2) * scale
         y = self.TFTHEIGHT//2 - (s.font['height']//2) * scale
@@ -817,6 +831,22 @@ class BaseTests(BaseDraw, BaseChars, BaseImages):
                 blue += 1
                 print(i, 'blue is', blue)
 
+    def rectInfillTest(self, portrait=True, strobj=None):
+        if strobj is None:
+            from exceptions import NoneStringObject
+            raise NoneStringObject
+        prevportr = ILI._portrait
+        if prevportr != portrait:
+            self.portrait = portrait
+        height = self.TFTHEIGHT
+        width = self.TFTWIDTH
+        for i in range(3, height-40):
+            self.drawRect(0, 0, width, 30, DARKGREY, border=0)
+            self.drawRect(0, 30, width, height-30, YELLOW, border=0)
+            string = 'height = {0}'.format(i)
+            self.label(5, 2, 50, 18, BLACK, LIGHTGREY, string, strobj=strobj)
+            self.drawRect(5, 35, width-10, i, BLUE, fillcolor=GREEN)
+            pyb.delay(500)
 
 class BaseWidgets(BaseTests):
 
@@ -828,10 +858,11 @@ class BaseWidgets(BaseTests):
 
     # WORK IN PROGRESS
     # Need test
-    def widget(self, x, y, width, height, color, fillcolor, string, strobj=None,
+    def label(self, x, y, width, height, color, fillcolor, string, strobj=None,
             border=1):
         if strobj is None:
-            raise ValueError('string object is None')
+            from exceptions import NoneStringObject
+            raise NoneStringObject
         self._font = strobj.font
         strscale = strobj.fontscale
         strlen = len(string)
