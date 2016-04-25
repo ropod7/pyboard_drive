@@ -11,5 +11,5 @@ l = LCD( rate=21000000 ) # step down the SPI bus speed to 21 MHz may be opportun
 #   * Bacground screen color is not initialised --> background is black
 #   * Background  Yellow Background (allow to identify character width)
 #   * Foreground  Black (to see the caharacter in its yellow matrix) 
-l.charsTest( color=BLACK, bgcolor=YELLOW, font=Arial_14 )
+l.charsTest( color=BLACK, font='Arial_14' )
 
