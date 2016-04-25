@@ -51,18 +51,24 @@
 #
 # User don't need to import fonts, they imports by python code
 # Avaliable fonts:
-#    'VeraMono_10',
-#    'Vera_10',
-#    'Arial_14',
-#    'Vera_14',
-#    'VeraMono_14',
-#    'Pitch_14',
-#    'Pitch_22',
-#    'Vera_23',
-#    'VeraMono_23',
-#    'Heydings_23',
-#    'Entypo_14',
-#    'Entypo_23',
+#     Arrows_15
+#     Arrows_23
+#     Vera_10
+#     Vera_m10
+#     Arial_14
+#     Vera_15
+#     Vera_m15
+#     VeraMono_15
+#     VeraMono_m15
+#     Pitch_m15
+#     Pitch_m23
+#     Vera_23
+#     VeraMono_23
+#     Vera_m23
+#     VeraMono_m23
+#     Heydings_23
+#     Entypo_13
+#     Entypo_23
 #
 #    define fonts by typing in string format:
 #        string = lcd.initCh(color=(R,G,B), font='Arial_14', [scale=1])
@@ -86,10 +92,13 @@ from colors import *
 
 micropython.alloc_emergency_exception_buf(100)
 
-imgcachedir = 'images/cache'
-if 'cache' not in os.listdir('images'):
+# next 3 variables are constants, using in BaseImages class
+imgdir = 'images'
+cachedir = 'cache'
+imgcachepath = imgdir + '/' + cachedir
+if cachedir not in os.listdir(imgdir):
     try:
-        os.mkdir(imgcachedir)
+        os.mkdir(imgcachepath)
     except OSError: pass
 
 rate = 42000000
@@ -516,7 +525,7 @@ class BaseChars(ILI, BaseDraw):
             scale = self._fontscale
         font = self._font
         self._check_portrait()
-        self._fontscale = scale = 5 if scale > 5 else scale
+        self._fontscale = scale = 5 if scale >= 5 else scale
         index = ord(char)
         height = font['height']
         try:
@@ -561,7 +570,7 @@ class BaseChars(ILI, BaseDraw):
                 else:
                     chpos = scale
                 x += self._asm_get_charpos(chrwidth, chpos, 3)
-            x += self._asm_get_charpos(len(font[32]), chpos, 3)
+            x += self._asm_get_charpos(font['width']//4, chpos, 3)
 
 class BaseImages(ILI):
 
@@ -602,7 +611,7 @@ class BaseImages(ILI):
 
     # Using in renderBmp method
     def _render_bmp_image(self, filename, pos):
-        path = 'images/'
+        path = imgdir + '/'
         memread = 512
         with open(path + filename, 'rb') as f:
             startbit, width, height = self._set_image_headers(f)
@@ -616,17 +625,16 @@ class BaseImages(ILI):
                     data = bytearray(f.read(memread))
                     self._reverse(data, len(data))
                     self._write_data(data)
-                except OSError as err:
-                    print(err)
+                except OSError:
                     break
 
     # Using in renderBmp method
     def _render_bmp_cache(self, filename, pos):
-        filename = filename + '.cache'
+        filename = filename + '.' + cachedir
         startbit = 8
-        memread = 1024 * 10
+        memread = 1024 * 8
         self._gcCollect()
-        with open(imgcachedir + '/' + filename, 'rb') as f:
+        with open(imgcachepath + '/' + filename, 'rb') as f:
             width = struct.unpack('H', f.readline())[0]
             height = struct.unpack('H', f.readline())[0]
             print(filename, 'sizes:', str(width) + 'x' + str(height))
@@ -638,8 +646,7 @@ class BaseImages(ILI):
             while True:
                 try:
                     self._write_data(f.read(memread))
-                except OSError as err:
-                    print(err)
+                except OSError:
                     break
         self._gcCollect()
 
@@ -648,41 +655,42 @@ class BaseImages(ILI):
     # 2. if part of image goes out of the screen, must to be rendered
     # only displayed part
     def renderBmp(self, filename, pos=None, cached=True, bgcolor=None):
-        self._image_orientation()
         self._gcCollect()
         notcached = ''
         if bgcolor:
             self.fillMonocolor(bgcolor)
-        if filename + '.cache' not in os.listdir('images/cache'):
+        self._image_orientation()
+        if filename + '.' + cachedir not in os.listdir(imgcachepath):
             notcached = 'not cached'
         if cached:
             self._render_bmp_cache(filename, pos)
         elif not cached or notcached:
-            print(filename, 'image', notcached)
+            print(filename, imgdir[:-1], notcached)
             self._render_bmp_image(filename, pos)
         self._graph_orientation()
 
     def clearImageCache(self, path):
         for obj in os.listdir(path):
-            if obj.endswith('.cache'):
+            if obj.endswith('.' + cachedir):
                 os.remove(path + '/' + obj)
 
     # TODO:
     # 1. resize large images to screen resolution
-    def cacheImage(self, image, imgdir='images'):
+    def cacheImage(self, image, imgdir=imgdir):
+        # setting portrait, because functionality not full at this moment
+        self.setPortrait(True)
         self.fillMonocolor(BLACK)
         strings = self.initCh(color=DARKGREY, font='Arial_14')
         strings.printLn("Caching:", 25, 25)
         strings.printLn(image + '...', 45, 45)
         memread = 60                                      # less memory write - more stable result
-        cachepath = imgdir + '/cache'
-        cachedimage = image + '.cache'
-        if cachedimage in os.listdir(cachepath):
-            os.remove(cachepath + '/' + cachedimage)
+        cachedimage = image + '.' + cachedir
+        if cachedimage in os.listdir(imgcachepath):
+            os.remove(imgcachepath + '/' + cachedimage)
         with open(imgdir + '/' + image, 'rb') as f:
             startbit, width, height = self._set_image_headers(f)
 
-            c = open(cachepath + '/' + cachedimage, 'wb')
+            c = open(imgcachepath + '/' + cachedimage, 'wb')
             for val in [width, height]:
                 c.write(bytes(array.array('H', [val])) + b"\n")
 
@@ -694,17 +702,17 @@ class BaseImages(ILI):
                     self._reverse(data, len(data))
                     c.write(data)
                 except OSError as err:
-                    print('OSError:', err)
                     break
             c.close()
         self.fillMonocolor(BLACK)
         strings.printLn(image + " cached", 25, 25)
         print('Cached:', image)
         del(strings)
+        pyb.delay(100)
         self._gcCollect()
 
-    def cacheAllImages(self, imgdir='images'):
-        if 'cache' not in os.listdir(imgdir):
+    def cacheAllImages(self, imgdir=imgdir):
+        if cachedir not in os.listdir(imgdir):
             os.chdir(imgdir)
             os.mkdir('cache')
             try:
@@ -712,7 +720,7 @@ class BaseImages(ILI):
             except OSError:
                 os.chdir('/flash')
         for image in os.listdir(imgdir):
-            if image == 'cache': continue
+            if image == cachedir: continue
             self.cacheImage(image, imgdir=imgdir)
             pyb.delay(100)            # delay for better and stable result
 
@@ -770,7 +778,7 @@ class BaseTests(BaseDraw, Chars, BaseImages):
 
     def charsTest(self, color, font=None, bgcolor=None, scale=1):
         ch = self.initCh(color=color, font=font, bgcolor=bgcolor, scale=scale)
-        scale = 3 if scale > 2 else 1
+        scale = 3 if scale >= 3 else 1
         x = y = 5
         font = ch._font
         fwidth = font['width']
@@ -785,11 +793,11 @@ class BaseTests(BaseDraw, Chars, BaseImages):
                 x = 10
                 y = self._asm_get_charpos(font['height'], scale, y)
 
-    def renderImageTest(self, cached=True, path='images', cpath='cache',
+    def renderImageTest(self, cached=True, path=imgdir, cpath=cachedir,
                     delay=0, bgcolor=BLACK): # images/cache path
         starttime = pyb.micros()//1000
-        cachelist = os.listdir('images/cache')
-        print('cached images:', cachelist)
+        cachelist = os.listdir(imgcachepath)
+        print(cachedir+'d ' + imgdir + ':', cachelist)
         for image in os.listdir(path):
             if image != cpath and image.endswith('bmp'):
                 self.renderBmp(image, cached=cached, bgcolor=bgcolor)
@@ -971,7 +979,7 @@ if __name__ == '__main__':
     d.drawCircleFilled(120, 160, 55, RED)
     d.drawCircle(120, 160, 59, GREEN, border=5)
 
-    c = d.initCh(color=BLACK, bgcolor=ORANGE, font='Arial_14') # define string obj
+    c = d.initCh(color=BLACK, font='Arial_14') # define string obj
     c.printChar('@', 30, 30)
     c.printLn('Hello BaseChar class', 30, 290)
 
