@@ -8,8 +8,6 @@ The main advantage of ILI9341 powered screen reside in the fact that your TFT + 
 
 This driver has been developed in Python for a LCD in portrait orientation (by default) and having the 240 pixels width and 320 pixels height (by default).
 
-![TFT Display in portrait mode](https://github.com/mchobby/pyboard_drive/blob/master/ILI9341/examples/01_basic/05e_println.jpg "TFT display in Portrait mode")
-
 The driver has been designed to support different orientation (landscape) and different size. 
 
 # Under construction 

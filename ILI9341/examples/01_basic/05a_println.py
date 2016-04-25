@@ -14,15 +14,13 @@ l.fillMonocolor( CYAN )
 
 # Create an object that can print string on the screen
 #   * initCh() create a BaseChars object which retains graphical properties about the printed string
-#   * bgcolor, color: defines the background color and the text color
+#   * color: defines the text color
 #   * font : Arial_14 by default allows you to define the font to use
 #   * scale: scale the font (1, 2, 3)
-#   * bctimes: number of time to blink the cursor (when requested) 
 #
-c = l.initCh(color=RED, bgcolor=CYAN)
+c = l.initCh(color=RED, font='Arial_14')
 
 # Print the string at position x=10, y=10
-#   bc: False by default, allows to show the blinking cursor when the string is printed
 #   scale: scale the font (1, 2, 3)
 #
 c.printLn( "Hello PyBoard", 10, 10 )
