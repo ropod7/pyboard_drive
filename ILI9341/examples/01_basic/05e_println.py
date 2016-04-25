@@ -19,8 +19,8 @@ l.fillMonocolor( RED )
 #   * scale: scale the font (1, 2, 3)
 #   * bctimes: number of time to blink the cursor (when requested) 
 #
-c = l.initCh(color=BLACK, bgcolor=ORANGE)        # Background color different from screen color
-p = l.initCh(color=BLACK, bgcolor=RED, scale=2)  # Up scale and Background color the same as screen color
+c = l.initCh(color=BLACK, font='Arial_14')        # Background color different from screen color
+p = l.initCh(color=BLACK, font='Arial_14', scale=2)  # Up scale and Background color the same as screen color
 
 # Print the strings 
 #   bc: False by default, allows to show the blinking cursor when the string is printed
