@@ -133,17 +133,21 @@ class ILI:
         ILI._cnt += 1
         self._gcCollect()
 
+    @micropython.viper
     def reset(self):
         ILI._rst.low()                #
         pyb.delay(1)                  #    RESET LCD SCREEN
         ILI._rst.high()               #
 
+    @micropython.viper
     def setPortrait(self, portrait):
         self.portrait = portrait
 
+    @micropython.viper
     def _gcCollect(self):
         gc.collect()
 
+    @micropython.viper
     def _setWH(self):
         if ILI._portrait:
             ILI._curheight = self.TFTHEIGHT = ILI._tftheight
@@ -153,6 +157,7 @@ class ILI:
             ILI._curwidth  = self.TFTWIDTH  = ILI._tftheight
         self._graph_orientation()
 
+    @micropython.viper
     def _initILI(self):
         self._write_cmd(ILI._regs['LCDOFF'])   # Display OFF
         pyb.delay(10)
@@ -173,6 +178,7 @@ class ILI:
         pyb.delay(10)
         self._write_cmd(ILI._regs['RAMWR'])
 
+    @micropython.native
     def _write(self, word, dc, recv):
         dcs = ['cmd', 'data']
 
@@ -190,6 +196,7 @@ class ILI:
         ILI._csx.high()
 
     # for now decoded just recv color (or data readed from memory)
+    @micropython.native
     def _decode_recv_data(self, data):
         # For example:
         #    1. recieving sets 5 bytes
@@ -216,13 +223,16 @@ class ILI:
         data = struct.pack('>H', data)
         return data
 
+    @micropython.native
     def _write_cmd(self, word, recv=None):
         data = self._write(word, 'cmd', recv)
         return data
 
+    @micropython.native
     def _write_data(self, word):
         self._write(word, 'data', recv=None)
 
+    @micropython.native
     def _write_words(self, words):
         wordL = len(words)
         wordL = wordL if wordL > 1 else ""
@@ -230,6 +240,7 @@ class ILI:
         words = struct.pack(fmt, *words)
         self._write_data(words)
 
+    @micropython.viper
     def _graph_orientation(self):
         self._write_cmd(ILI._regs['MADCTL'])   # Memory Access Control
         # Portrait:
@@ -239,6 +250,7 @@ class ILI:
         data = 0x48 if ILI._portrait else 0x28
         self._write_data(data)
 
+    @micropython.viper
     def _char_orientation(self):
         self._write_cmd(ILI._regs['MADCTL'])   # Memory Access Control
         # Portrait:
@@ -248,6 +260,7 @@ class ILI:
         data = 0xE8 if ILI._portrait else 0x58
         self._write_data(data)
 
+    @micropython.viper
     def _image_orientation(self):
         self._write_cmd(ILI._regs['MADCTL'])   # Memory Access Control
         # Portrait:
@@ -257,6 +270,7 @@ class ILI:
         data = 0xC8 if ILI._portrait else 0x68
         self._write_data(data)
 
+    @micropython.native
     def _set_window(self, x0, y0, x1, y1):
         # Column Address Set
         self._write_cmd(ILI._regs['CASET'])
@@ -267,6 +281,7 @@ class ILI:
         # Memory Write
         self._write_cmd(ILI._regs['RAMWR'])
 
+    @micropython.native
     def _get_Npix_monoword(self, color):
         if color == WHITE:
             word = 0xFFFF
@@ -280,6 +295,7 @@ class ILI:
 
     # Method writed by MCHobby https://github.com/mchobby
     # Transform a RGB888 color to RGB565 color tuple.
+    @micropython.native
     def rgbTo565(self, r, g, b):
         return (r>>3, g>>2, b>>3)
 
@@ -306,7 +322,7 @@ class BaseDraw(ILI):
 
     def drawPixel(self, x, y, color, pixels=4):
         if pixels not in [1, 4]:
-            raise ValueError("Pixels count must be 1 or 4")
+            raise ValueError
 
         self._set_window(x, x+1, y, y+1)
         self._write_data(self._get_Npix_monoword(color) * pixels)
@@ -391,7 +407,7 @@ class BaseDraw(ILI):
             dborder = border*2
             self._set_window(xsum, xsum+width-dborder, ysum, ysum+height-dborder)
             # if MemoryError, try to set higher portion value
-            portion = 20
+            portion = 32
             pixels = width * (height//portion+1) if height >= portion else width * height
             word = self._get_Npix_monoword(fillcolor) * pixels
             self._gcCollect()
@@ -488,6 +504,7 @@ class BaseChars(ILI, BaseDraw):
             self.TFTWIDTH  = ILI._tftheight
         self._char_orientation()
 
+    @micropython.viper
     def _check_portrait(self):
         if self.portrait != ILI._portrait:
             self.portrait = ILI._portrait
@@ -498,12 +515,14 @@ class BaseChars(ILI, BaseDraw):
         mul(r0, r1)
         adc(r0, r2)
 
+    @micropython.viper
     def _get_bgcolor(self, x, y):
         self._set_window(x, x, y, y)
         data = self._write_cmd(self._regs['RAMRD'], recv=True)
         data = self._decode_recv_data(data)
         return data
 
+    #@micropython.viper
     def _set_word_length(self, data):
         return bin(data)[3:] * self._fontscale
 
@@ -592,10 +611,12 @@ class BaseImages(ILI):
         sub(r1, 2)  # End of loop?
         bpl(loopstart)
 
+    @micropython.viper
     def _set_image_headers(self, f):
         headers = list()
         if f.read(2) != b'BM':
-            raise OSError('Not a valid BMP image')
+            from exceptions import BMPvalidationError
+            raise BMPvalidationError
         for pos in (10, 18, 22):                                 # startbit, width, height
             f.seek(pos)
             headers.append(struct.unpack('<H', f.read(2))[0])    # read double byte
@@ -632,7 +653,7 @@ class BaseImages(ILI):
     def _render_bmp_cache(self, filename, pos):
         filename = filename + '.' + cachedir
         startbit = 8
-        memread = 1024 * 8
+        memread = 1024 * 6
         self._gcCollect()
         with open(imgcachepath + '/' + filename, 'rb') as f:
             width = struct.unpack('H', f.readline())[0]
@@ -669,6 +690,7 @@ class BaseImages(ILI):
             self._render_bmp_image(filename, pos)
         self._graph_orientation()
 
+    @micropython.viper
     def clearImageCache(self, path):
         for obj in os.listdir(path):
             if obj.endswith('.' + cachedir):
@@ -711,6 +733,7 @@ class BaseImages(ILI):
         pyb.delay(100)
         self._gcCollect()
 
+    @micropython.viper
     def cacheAllImages(self, imgdir=imgdir):
         if cachedir not in os.listdir(imgdir):
             os.chdir(imgdir)
@@ -728,10 +751,6 @@ class Chars(BaseChars):
 
     def __init__(self, *args, **kwargs):
         super(Chars, self).__init__(*args, **kwargs)
-
-    def initCh(self, **kwargs):
-        ch = Chars(portrait=ILI._portrait, **kwargs)
-        return ch
 
     def printChar(self, *args, **kwargs):
         super(Chars, self).printChar(*args, **kwargs)
@@ -871,7 +890,7 @@ class BaseWidgets(BaseTests):
     # WORK IN PROGRESS
     # Need test
     # TODO:
-    # 1. set height for multiply string lines if width is not defined
+    # 1. set height for multiply string lines if width is defined
     def label(self, x, y, color, fillcolor, string, width=None, height=None,
                 strobj=None, border=1):
         if strobj is None:
@@ -899,6 +918,12 @@ class BaseWidgets(BaseTests):
         strobj.printLn(string, strX, strY, strlen=width)
         x1, y1 = x+width, y+height
         return x, y, x1, y1
+
+    def button(self):
+        pass
+
+    def entry(self):
+        pass
 
 class LCD(BaseWidgets):
 
@@ -939,7 +964,8 @@ class LCD(BaseWidgets):
         super(LCD, self).drawOvalFilled(*args, **kwargs)
 
     def initCh(self, **kwargs):
-        return super(LCD, self).initCh(**kwargs)
+        ch = Chars(portrait=ILI._portrait, **kwargs)
+        return ch
 
     def printChar(self, *args, **kwargs):
         super(LCD, self).printChar(*args, **kwargs)
