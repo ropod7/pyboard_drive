@@ -178,7 +178,6 @@ class ILI:
         pyb.delay(10)
         self._write_cmd(ILI._regs['RAMWR'])
 
-    @micropython.native
     def _write(self, word, dc, recv):
         dcs = ['cmd', 'data']
 
@@ -196,7 +195,6 @@ class ILI:
         ILI._csx.high()
 
     # for now decoded just recv color (or data readed from memory)
-    @micropython.native
     def _decode_recv_data(self, data):
         # For example:
         #    1. recieving sets 5 bytes
@@ -223,16 +221,13 @@ class ILI:
         data = struct.pack('>H', data)
         return data
 
-    @micropython.native
     def _write_cmd(self, word, recv=None):
         data = self._write(word, 'cmd', recv)
         return data
 
-    @micropython.native
     def _write_data(self, word):
         self._write(word, 'data', recv=None)
 
-    @micropython.native
     def _write_words(self, words):
         wordL = len(words)
         wordL = wordL if wordL > 1 else ""
@@ -270,7 +265,6 @@ class ILI:
         data = 0xC8 if ILI._portrait else 0x68
         self._write_data(data)
 
-    @micropython.native
     def _set_window(self, x0, y0, x1, y1):
         # Column Address Set
         self._write_cmd(ILI._regs['CASET'])
@@ -281,7 +275,6 @@ class ILI:
         # Memory Write
         self._write_cmd(ILI._regs['RAMWR'])
 
-    @micropython.native
     def _get_Npix_monoword(self, color):
         if color == WHITE:
             word = 0xFFFF
@@ -295,7 +288,6 @@ class ILI:
 
     # Method writed by MCHobby https://github.com/mchobby
     # Transform a RGB888 color to RGB565 color tuple.
-    @micropython.native
     def rgbTo565(self, r, g, b):
         return (r>>3, g>>2, b>>3)
 
@@ -316,27 +308,24 @@ class BaseDraw(ILI):
         super(BaseDraw, self).__init__(**kwargs)
 
     def _set_ortho_line(self, width, length, color):
-        pixels = width * length
+        pixels = width * (length+1)
         word = self._get_Npix_monoword(color) * pixels
         self._write_data(word)
 
-    def drawPixel(self, x, y, color, pixels=4):
-        if pixels not in [1, 4]:
-            raise ValueError
-
-        self._set_window(x, x+1, y, y+1)
-        self._write_data(self._get_Npix_monoword(color) * pixels)
+    def drawPixel(self, x, y, color):
+        self._set_window(x, x, y, y)
+        self._write_data(self._get_Npix_monoword(color))
 
     def drawVline(self, x, y, length, color, width=1):
         if length > self.TFTHEIGHT: length = self.TFTHEIGHT
         if width > 10: width = 10
-        self._set_window(x, x+(width-1), y, y+length)
+        self._set_window(x, x+(width-1), y, y+length-1)
         self._set_ortho_line(width, length, color)
 
     def drawHline(self, x, y, length, color, width=1):
         if length > self.TFTWIDTH: length = self.TFTWIDTH
         if width > 10: width = 10
-        self._set_window(x, x+length, y, y+(width-1))
+        self._set_window(x, x+length-1, y, y+(width-1))
         self._set_ortho_line(width, length, color)
 
     # Method writed by MCHobby https://github.com/mchobby
@@ -426,13 +415,29 @@ class BaseDraw(ILI):
 
     def _get_x_perimeter_point(self, x, degrees, radius):
         sin = math.sin(math.radians(degrees))
-        x = int(x+(radius*sin))
+        x = math.trunc(x+(radius*sin))
         return x
 
     def _get_y_perimeter_point(self, y, degrees, radius):
         cos = math.cos(math.radians(degrees))
-        y = int(y-(radius*cos))
+        y = math.ceil(y-(radius*cos))
         return y
+
+    def drawCircle(self, x, y, radius, color, border=1, degrees=360, startangle=0):
+        border = 5 if border > 5 else border
+        #length = border-1 if border > 1 else 1
+        # adding startangle to degrees
+        if startangle > 0:
+            degrees += startangle
+        if border > 1:
+            radius = radius-border//2
+        degp = 0.5
+        quotient = int(divmod(1, degp)[0])
+        for i in range(startangle, degrees):
+            for j in tuple(i + degp * j for j in range(1, quotient+1)):
+                X = self._get_x_perimeter_point(x+degp, j, radius)
+                Y = self._get_y_perimeter_point(y+degp, j, radius)
+                self.drawHline(X, Y, border, color, border)
 
     def drawCircleFilled(self, x, y, radius, color):
         tempY = 0
@@ -448,22 +453,6 @@ class BaseDraw(ILI):
                 length = xPos+1
                 self.drawHline(xNeg, Y, length-xNeg, color, width=4)
             tempY = Y
-
-    def drawCircle(self, x, y, radius, color, border=1, degrees=360, startangle=0):
-        border = 5 if border > 5 else border
-        # adding startangle to degrees
-        if startangle > 0:
-            degrees += startangle
-        if border > 1:
-            x = x - border//2
-            y = y - border//2
-            radius = radius-border//2
-        for i in range(startangle, degrees):
-            X = self._get_x_perimeter_point(x, i, radius)
-            Y = self._get_y_perimeter_point(y, i, radius)
-            if   i == 90:  X = X-1
-            elif i == 180: Y = Y-1
-            self.drawRect(X, Y, border, border, color, border=0)
 
     def drawOvalFilled(self, x, y, xradius, yradius, color):
         tempY = 0
@@ -522,7 +511,6 @@ class BaseChars(ILI, BaseDraw):
         data = self._decode_recv_data(data)
         return data
 
-    #@micropython.viper
     def _set_word_length(self, data):
         return bin(data)[3:] * self._fontscale
 
@@ -629,6 +617,11 @@ class BaseImages(ILI):
             x = 0 if width  == self.TFTWIDTH else (self.TFTWIDTH-width)//2
             y = 0 if height == self.TFTHEIGHT else (self.TFTHEIGHT-height)//2
         return x, y
+
+    def _write_from_bmp(self, f, memread):
+        data = bytearray(f.read(memread))
+        self._reverse(data, len(data))
+        self._write_data(data)
 
     # Using in renderBmp method
     def _render_bmp_image(self, filename, pos):
@@ -888,7 +881,6 @@ class BaseWidgets(BaseTests):
         return len(self.font[ord(char)])
 
     # WORK IN PROGRESS
-    # Need test
     # TODO:
     # 1. set height for multiply string lines if width is defined
     def label(self, x, y, color, fillcolor, string, width=None, height=None,
@@ -901,7 +893,7 @@ class BaseWidgets(BaseTests):
         strlen = len(string)
         spaces = len(string.split(" ")) - 1
         # getting width of string
-        strwidth = sum(map(self._get_strwidth, string))
+        strwidth = math.fsum(map(self._get_strwidth, string))
         strwidth = ((strwidth + strlen*3) + spaces*2*3) * strscale
         strheight = strobj.font['height'] * strscale
         if width is None:
