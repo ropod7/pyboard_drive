@@ -1,3 +1,4 @@
+# ----WORK IN PROGRESS----
 #
 # The MIT License (MIT)
 # Copyright (c) 2016. Roman Podgaiski
@@ -62,9 +63,6 @@
 #     VeraMono_m15
 #     Pitch_m15
 #     Pitch_m23
-#     Vera_23
-#     VeraMono_23
-#     Vera_m23
 #     VeraMono_m23
 #     Heydings_23
 #     Entypo_13
@@ -102,6 +100,8 @@ if cachedir not in os.listdir(imgdir):
     except OSError: pass
 
 rate = 42000000
+
+__all__ = []
 
 class ILI:
     _cnt  = 0
@@ -394,14 +394,15 @@ class BaseDraw(ILI):
             xsum = x+border
             ysum = y+border
             dborder = border*2
-            self._set_window(xsum, xsum+width-dborder, ysum, ysum+height-dborder)
+            self._set_window(xsum, xsum + width - dborder, ysum, ysum + height - dborder)
             # if MemoryError, try to set higher portion value
             portion = 32
-            pixels = width * (height//portion+1) if height >= portion else width * height
+            pixels = width * (height // portion + 1)
+            pixels = pixels if height >= portion else (width * height)//2+1
             word = self._get_Npix_monoword(fillcolor) * pixels
             self._gcCollect()
             i=0
-            times = 16 if height < portion+1 else portion + 1
+            times = 16*2 if height < portion + 1 else portion + 1
             while i < (times):
                 self._write_data(word)
                 i+=1
@@ -425,7 +426,7 @@ class BaseDraw(ILI):
 
     def drawCircle(self, x, y, radius, color, border=1, degrees=360, startangle=0):
         border = 5 if border > 5 else border
-        #length = border-1 if border > 1 else 1
+        self._graph_orientation()
         # adding startangle to degrees
         if startangle > 0:
             degrees += startangle
@@ -441,6 +442,7 @@ class BaseDraw(ILI):
 
     def drawCircleFilled(self, x, y, radius, color):
         tempY = 0
+        self._graph_orientation()
         for i in range(180):
             xNeg = self._get_x_perimeter_point(x, 360-i, radius-1)
             xPos = self._get_x_perimeter_point(x, i, radius)
@@ -456,6 +458,7 @@ class BaseDraw(ILI):
 
     def drawOvalFilled(self, x, y, xradius, yradius, color):
         tempY = 0
+        self._graph_orientation()
         for i in range(180):
             xNeg = self._get_x_perimeter_point(x, 360-i, xradius)
             xPos = self._get_x_perimeter_point(x, i, xradius)
@@ -480,7 +483,7 @@ class BaseChars(ILI, BaseDraw):
         else:
             from exceptions import NoneTypeFont
             raise NoneTypeFont
-        self._portrait = ILI._portrait
+        self.portrait = ILI._portrait
         self._bgcolor = bgcolor if bgcolor is None else self._get_Npix_monoword(bgcolor)
         self._fontscale = scale
 
@@ -554,7 +557,7 @@ class BaseChars(ILI, BaseDraw):
 
     # TODO:
     # add split by new line
-    def printLn(self, string, x, y, bc=False, scale=None, strlen=None):
+    def printLn(self, string, x, y, bc=False, scale=None, strlen=None, splitter=' '):
         if scale is None:
             scale = self._fontscale
         # if typed string length higher than strlen, string printing in new line
@@ -563,9 +566,15 @@ class BaseChars(ILI, BaseDraw):
         font = self._font
         X, Y = x, y
         scale = 3 if scale > 3 else scale
+        i = 0
         for word in string.split(' '):
             lnword = len(word)
-            outofscreen = x + lnword * (font['width'] - font['width']//3) * scale
+            if splitter == ' ':
+                outofscreen = x + lnword * (font['width'] - font['width']//3) * scale
+            elif splitter == '\n' and i > 0:
+                outofscreen = strlen
+            else:
+                outofscreen = strlen - 1
             if (outofscreen) >= (strlen):
                 x = X
                 y += (font['height'] + 2) * scale
@@ -578,6 +587,7 @@ class BaseChars(ILI, BaseDraw):
                     chpos = scale
                 x += self._asm_get_charpos(chrwidth, chpos, 3)
             x += self._asm_get_charpos(font['width']//4, chpos, 3)
+            i += 1
 
 class BaseImages(ILI):
 
@@ -779,11 +789,149 @@ class Chars(BaseChars):
             raise PortraitBoolError
         self._setWH()
 
+class BaseWidgets(BaseDraw, BaseImages):
+
+    def __init__(self, **kwargs):
+        super(BaseWidgets, self).__init__(**kwargs)
+
+    def _get_wrdwidth(self, char):
+        try:
+            return len(self._font[ord(char)])
+        except KeyError:
+            return 0
+
+    def _get_largest(self, word):
+        return [len(word), word]
+
+    def _get_strwidth(self, width, strlen, spaces, scale):
+        width = ((width + strlen * 3) + spaces * 2 * 3) * scale
+        return width
+
+    def _get_width(self, width, border):
+        return width + 20 + border * 2
+
+    # WORK IN PROGRESS
+    # TODO:
+    # 1. set height for multiply lines if dims are not defined
+    # 2. every line align by center
+    def label(self, x, y, color, fillcolor, string, width=None, height=None,
+                strobj=None, border=1):
+        if strobj is None:
+            from exceptions import NoneStringObject
+            raise NoneStringObject
+        self._font = strobj.font
+        strscale = strobj.fontscale
+        strlen = len(string)
+        words = string.split(" ")
+        spaces = len(words) - 1
+        # getting width of string
+        strwidth = sum(map(self._get_wrdwidth, string))
+        self._gcCollect()
+        strwidth = self._get_strwidth(strwidth, strlen, spaces, strscale)
+        strheight = strobj.font['height'] * strscale
+        lines = 1
+        splitter = ' '
+
+        if width is None:
+            width = self._get_width(strwidth, border)
+            if width > self.TFTWIDTH - (x * 2):
+                largest = max(map(self._get_largest, words))
+                largwdth = sum(map(self._get_wrdwidth, largest[1]))
+                strwidth = self._get_strwidth(largwdth, largest[0], 0, strscale)
+                width = self._get_width(strwidth, border)
+                lines = len(words)
+                height = (strheight + 2 * (lines-1)) * lines
+                splitter = '\n'
+        if height is None or strheight > height - 5:
+            height = strheight + 10
+
+        self.drawRect(x, y, width, height, color, border=border, fillcolor=fillcolor)
+        self._gcCollect()
+        # setting up string x and y point
+        strX = ((width - strwidth) >> 1) + x
+        strY = ((height//lines)-((strobj.font['height'] - 4) * strscale)) // 2 + y
+        strobj.printLn(string, strX, strY, splitter=splitter)
+        #x1, y1 = x + width, y + height
+        #return x, y, x1, y1
+
+    def button(self):
+        pass
+
+    def entry(self):
+        pass
+
+class LCD(BaseWidgets):
+
+    def __init__(self, **kwargs):
+        super(LCD, self).__init__(**kwargs)
+
+    def reset(self):
+        super(LCD, self).reset()
+
+    def setPortrait(self, *args):
+        super(LCD, self).setPortrait(*args)
+
+    def drawPixel(self, *args, **kwargs):
+        super(LCD, self).drawPixel(*args, **kwargs)
+
+    def drawVline(self, *args, **kwargs):
+        super(LCD, self).drawVline(*args, **kwargs)
+
+    def drawHline(self, *args, **kwargs):
+        super(LCD, self).drawHline(*args, **kwargs)
+
+    def drawLine(self, *args, **kwargs):
+        super(LCD, self).drawLine(*args, **kwargs)
+
+    def drawRect(self, *args, **kwargs):
+        super(LCD, self).drawRect(*args, **kwargs)
+
+    def fillMonocolor(self, *args, **kwargs):
+        super(LCD, self).fillMonocolor(*args, **kwargs)
+
+    def drawCircleFilled(self, *args, **kwargs):
+        super(LCD, self).drawCircleFilled(*args, **kwargs)
+
+    def drawCircle(self, *args, **kwargs):
+        super(LCD, self).drawCircle(*args, **kwargs)
+
+    def drawOvalFilled(self, *args, **kwargs):
+        super(LCD, self).drawOvalFilled(*args, **kwargs)
+
+    def initCh(self, **kwargs):
+        ch = Chars(portrait=ILI._portrait, **kwargs)
+        return ch
+
+    def renderBmp(self, *args, **kwargs):
+        super(LCD, self).renderBmp(*args, **kwargs)
+
+    def clearImageCache(self, *args, **kwargs):
+        super(LCD, self).clearImageCache(*args, **kwargs)
+
+    def cacheImage(self, *args, **kwargs):
+        super(LCD, self).cacheImage(*args, **kwargs)
+
+    def cacheAllImages(self, *args, **kwargs):
+        super(LCD, self).cacheAllImages(*args, **kwargs)
+
+    def charsTest(self, *args, **kwargs):
+        super(LCD, self).charsTest(*args, **kwargs)
+
+    def renderImageTest(self, *args, **kwargs):
+        return super(LCD, self).renderImageTest(*args, **kwargs)
+
+    def label(self, *args, **kwargs):
+        return super(LCD, self).label(*args, **kwargs)
+
+    @property
+    def portarit(self):
+        return self.portrait
+
     @property
     def resolution(self):
-        print('width:  {0}px\nheight: {1}px'.format(self.TFTWIDTH, self.TFTHEIGHT))
+        print(self.TFTWIDTH, self.TFTHEIGHT)
 
-class BaseTests(BaseDraw, Chars, BaseImages):
+class BaseTests(LCD):
 
     def __init__(self, **kwargs):
         super(BaseTests, self).__init__(**kwargs)
@@ -842,7 +990,7 @@ class BaseTests(BaseDraw, Chars, BaseImages):
     def rgbInfillTest(self):
         self.portrait = True
         red = green = blue = 0
-        for i in range(65536):
+        for i in range(2**16):
             if red > 31:
                 red = 0
             if green > 63:
@@ -871,120 +1019,6 @@ class BaseTests(BaseDraw, Chars, BaseImages):
             self.drawRect(5, 35, width-10, i, BLUE, fillcolor=GREEN, border=border)
             pyb.delay(500)
         self.portrait = prevportr
-
-class BaseWidgets(BaseTests):
-
-    def __init__(self, **kwargs):
-        super(BaseWidgets, self).__init__(**kwargs)
-
-    def _get_strwidth(self, char):
-        return len(self.font[ord(char)])
-
-    # WORK IN PROGRESS
-    # TODO:
-    # 1. set height for multiply string lines if width is defined
-    def label(self, x, y, color, fillcolor, string, width=None, height=None,
-                strobj=None, border=1):
-        if strobj is None:
-            from exceptions import NoneStringObject
-            raise NoneStringObject
-        self._font = strobj.font
-        strscale = strobj.fontscale
-        strlen = len(string)
-        spaces = len(string.split(" ")) - 1
-        # getting width of string
-        strwidth = math.fsum(map(self._get_strwidth, string))
-        strwidth = ((strwidth + strlen*3) + spaces*2*3) * strscale
-        strheight = strobj.font['height'] * strscale
-        if width is None:
-            width = strwidth + 20 + border * 2
-        if height is None or strheight > height-5:
-            height = strheight + 10
-            #print(height)
-
-        self.drawRect(x, y, width, height, color, border=border, fillcolor=fillcolor)
-        # setting up string x and y point
-        strX = ((width - strwidth)>>1) + x
-        #self.drawVline(strX+strwidth, y, 20, BLACK)
-        strY = (height-((strobj.font['height']-4) * strscale))//2 + y
-        strobj.printLn(string, strX, strY, strlen=width)
-        x1, y1 = x+width, y+height
-        return x, y, x1, y1
-
-    def button(self):
-        pass
-
-    def entry(self):
-        pass
-
-class LCD(BaseWidgets):
-
-    def __init__(self, **kwargs):
-        super(LCD, self).__init__(**kwargs)
-
-    def reset(self):
-        super(LCD, self).reset()
-
-    def setPortrait(self, *args):
-        super(LCD, self).setPortrait(*args)
-
-    def drawPixel(self, *args, **kwargs):
-        super(LCD, self).drawPixel(*args, **kwargs)
-
-    def drawVline(self, *args, **kwargs):
-        super(LCD, self).drawVline(*args, **kwargs)
-
-    def drawHline(self, *args, **kwargs):
-        super(LCD, self).drawHline(*args, **kwargs)
-
-    def drawLine(self, *args, **kwargs):
-        super(LCD, self).drawLine(*args, **kwargs)
-
-    def drawRect(self, *args, **kwargs):
-        super(LCD, self).drawRect(*args, **kwargs)
-
-    def fillMonocolor(self, *args, **kwargs):
-        super(LCD, self).fillMonocolor(*args, **kwargs)
-
-    def drawCircleFilled(self, *args, **kwargs):
-        super(LCD, self).drawCircleFilled(*args, **kwargs)
-
-    def drawCircle(self, *args, **kwargs):
-        super(LCD, self).drawCircle(*args, **kwargs)
-
-    def drawOvalFilled(self, *args, **kwargs):
-        super(LCD, self).drawOvalFilled(*args, **kwargs)
-
-    def initCh(self, **kwargs):
-        ch = Chars(portrait=ILI._portrait, **kwargs)
-        return ch
-
-    def printChar(self, *args, **kwargs):
-        super(LCD, self).printChar(*args, **kwargs)
-
-    def printLn(self, *args, **kwargs):
-        super(LCD, self).printLn(*args, **kwargs)
-
-    def renderBmp(self, *args, **kwargs):
-        super(LCD, self).renderBmp(*args, **kwargs)
-
-    def clearImageCache(self, *args, **kwargs):
-        super(LCD, self).clearImageCache(*args, **kwargs)
-
-    def cacheImage(self, *args, **kwargs):
-        super(LCD, self).cacheImage(*args, **kwargs)
-
-    def cacheAllImages(self, *args, **kwargs):
-        super(LCD, self).cacheAllImages(*args, **kwargs)
-
-    def charsTest(self, *args, **kwargs):
-        super(LCD, self).charsTest(*args, **kwargs)
-
-    def renderImageTest(self, *args, **kwargs):
-        return super(LCD, self).renderImageTest(*args, **kwargs)
-
-    def widget(self, *args, **kwargs):
-        return super(LCD, self).widget(*args, **kwargs)
 
 if __name__ == '__main__':
 

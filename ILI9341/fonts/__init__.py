@@ -10,9 +10,6 @@
 # VeraMono_m15
 # Pitch_m15
 # Pitch_m23
-# Vera_23
-# VeraMono_23
-# Vera_m23
 # VeraMono_m23
 # Heydings_23
 # Entypo_13
@@ -43,12 +40,6 @@ def importing(font):
         from fonts.pitch_15 import Pitch_m15 as font
     elif font == 'Pitch_m23':
         from fonts.pitch_23 import Pitch_m23 as font
-    elif font == 'Vera_23':
-        from fonts.vera_23 import Vera_23 as font
-    elif font == 'VeraMono_23':
-        from fonts.veram_23 import VeraMono_23 as font
-    elif font == 'Vera_m23':
-        from fonts.vera_m23 import Vera_m23 as font
     elif font == 'VeraMono_m23':
         from fonts.veram_m23 import VeraMono_m23 as font
     elif font == 'Heydings_23':
