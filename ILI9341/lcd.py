@@ -555,9 +555,7 @@ class BaseChars(ILI, BaseDraw):
         else:
             self._fill_bicolor(data, X, Y, chrwidth, height, scale=scale)
 
-    # TODO:
-    # add split by new line
-    def printLn(self, string, x, y, bc=False, scale=None, strlen=None, splitter=' '):
+    def printLn(self, string, x, y, bc=False, scale=None, strlen=None):
         if scale is None:
             scale = self._fontscale
         # if typed string length higher than strlen, string printing in new line
@@ -566,28 +564,24 @@ class BaseChars(ILI, BaseDraw):
         font = self._font
         X, Y = x, y
         scale = 3 if scale > 3 else scale
-        i = 0
-        for word in string.split(' '):
-            lnword = len(word)
-            if splitter == ' ':
-                outofscreen = x + lnword * (font['width'] - font['width']//3) * scale
-            elif splitter == '\n' and i > 0:
-                outofscreen = strlen
-            else:
-                outofscreen = strlen - 1
-            if (outofscreen) >= (strlen):
-                x = X
-                y += (font['height'] + 2) * scale
-            for i in range(lnword):
-                chrwidth = len(font[ord(word[i])])
-                self.printChar(word[i], x, y, scale=scale)
-                if chrwidth == 1:
-                    chpos = scale + 1 if scale > 2 else scale - 1
-                else:
-                    chpos = scale
-                x += self._asm_get_charpos(chrwidth, chpos, 3)
-            x += self._asm_get_charpos(font['width']//4, chpos, 3)
-            i += 1
+        for line in string.split('\n'):
+            for word in line.split(' '):
+                lnword = len(word)
+                outofd = x + lnword * (font['width'] - font['width'] // 3) * scale
+                if outofd >= strlen:
+                    x = X
+                    y += (font['height'] + 2) * scale
+                for i in range(lnword):
+                    chrwidth = len(font[ord(word[i])])
+                    self.printChar(word[i], x, y, scale=scale)
+                    if chrwidth == 1:
+                        chpos = scale + 1 if scale > 2 else scale - 1
+                    else:
+                        chpos = scale
+                    x += self._asm_get_charpos(chrwidth, chpos, 3)
+                x += self._asm_get_charpos(font['width']//4, chpos, 3)
+            x = X
+            y += (font['height'] + 2) * scale
 
 class BaseImages(ILI):
 
@@ -794,63 +788,73 @@ class BaseWidgets(BaseDraw, BaseImages):
     def __init__(self, **kwargs):
         super(BaseWidgets, self).__init__(**kwargs)
 
-    def _get_wrdwidth(self, char):
+    def _charwidth_mapper(self, char):
         try:
-            return len(self._font[ord(char)])
+            return len(self._font[ord(char)]) + 4                          # 4 is a space between word chars
         except KeyError:
-            return 0
+            return 6 if ord(char) == 32 else 0                             # if space between words
 
-    def _get_largest(self, word):
-        return [len(word), word]
+    def _get_maxstrW(self, width):
+        return width - 20 - self._border * 2
 
-    def _get_strwidth(self, width, strlen, spaces, scale):
-        width = ((width + strlen * 3) + spaces * 2 * 3) * scale
-        return width
+    def _get_widgW(self, width):
+        return width + 20 + self._border * 2
 
-    def _get_width(self, width, border):
-        return width + 20 + border * 2
+    def _get_swdth(self, string):
+        return sum(map(self._charwidth_mapper, string))
+
+    def _get_str_structure(self, string, xy, width, height):
+        x, y = xy
+        sided = 5
+        maxwidgW = self.TFTWIDTH - x - sided if width is None else width      # max widget width
+        maxstrW  = self._get_maxstrW(maxwidgW)                                # max string width
+        strwidth = sum(map(self._charwidth_mapper, string)) * self._fontscale # current string width
+        if strwidth >= maxstrW:
+            structure = [0, 0]
+            words = string.split(' ')
+            wcount = len(words)
+            structure.extend([(self._get_swdth(w), w) for w in words])
+            lines = structure[2:]
+            widgW = self._get_widgW(max(lines)[0])
+            widgH = height * len(lines)
+            structure[0] = widgW
+            structure[1] = widgH
+            return structure
+        else:
+            widgW = self._get_widgW(strwidth)
+            return (widgW, height, (strwidth, string),)
+
 
     # WORK IN PROGRESS
     # TODO:
     # 1. set height for multiply lines if dims are not defined
     # 2. every line align by center
-    def label(self, x, y, color, fillcolor, string, width=None, height=None,
+    def label(self, x, y, color, fillcolor, string, width=None,
                 strobj=None, border=1):
         if strobj is None:
             from exceptions import NoneStringObject
             raise NoneStringObject
         self._font = strobj.font
-        strscale = strobj.fontscale
-        strlen = len(string)
-        words = string.split(" ")
-        spaces = len(words) - 1
-        # getting width of string
-        strwidth = sum(map(self._get_wrdwidth, string))
+        self._fontscale = scale = strobj._fontscale
+        self._border = border
+        strheight = (strobj.font['height'] + 6) * scale
+        # testing
+        structure = self._get_str_structure(string, (x, y), width, strheight)
+        lines = structure[2:]
+        linen = len(lines)
+        width, height = structure[:2]
+        ###
         self._gcCollect()
-        strwidth = self._get_strwidth(strwidth, strlen, spaces, strscale)
-        strheight = strobj.font['height'] * strscale
-        lines = 1
-        splitter = ' '
-
-        if width is None:
-            width = self._get_width(strwidth, border)
-            if width > self.TFTWIDTH - (x * 2):
-                largest = max(map(self._get_largest, words))
-                largwdth = sum(map(self._get_wrdwidth, largest[1]))
-                strwidth = self._get_strwidth(largwdth, largest[0], 0, strscale)
-                width = self._get_width(strwidth, border)
-                lines = len(words)
-                height = (strheight + 2 * (lines-1)) * lines
-                splitter = '\n'
-        if height is None or strheight > height - 5:
-            height = strheight + 10
-
         self.drawRect(x, y, width, height, color, border=border, fillcolor=fillcolor)
         self._gcCollect()
         # setting up string x and y point
-        strX = ((width - strwidth) >> 1) + x
-        strY = ((height//lines)-((strobj.font['height'] - 4) * strscale)) // 2 + y
-        strobj.printLn(string, strX, strY, splitter=splitter)
+        for line in lines:
+            strwidth, string = line
+            strX = ((width - strwidth) // 2) + x
+            # TODO: find solution
+            strY = (strheight) // 2 + y
+            strobj.printLn(string, strX, strY)
+
         #x1, y1 = x + width, y + height
         #return x, y, x1, y1
 
