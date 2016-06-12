@@ -103,7 +103,7 @@ rate = 42000000
 
 __all__ = []
 
-class ILI:
+class ILI(object):
     _cnt  = 0
     _regs = dict()
     _spi  = object()
@@ -364,7 +364,7 @@ class BaseDraw(ILI):
                         # r may be negative when drawing the wrong way > fix it to draw positive
                         self.drawHline( math.trunc(x+(r*i)-r)+(0 if r>0 else math.trunc(r)), y+i, abs(math.trunc(r)), color )
 
-    def drawRect(self, x, y, width, height, color, border=1, fillcolor=None):
+    def drawRect(self, x, y, width, height, color, border=1, infill=None):
         border = 10 if border > 10 else border
         if width > self.TFTWIDTH: width = self.TFTWIDTH
         if height > self.TFTHEIGHT: height = self.TFTHEIGHT
@@ -388,9 +388,9 @@ class BaseDraw(ILI):
                 X = x + width - (border - 1) if i == 1 else x
                 self.drawVline(X, Y, H, color, border)
         else:
-            fillcolor = color
+            infill = color
 
-        if fillcolor:
+        if infill:
             xsum = x+border
             ysum = y+border
             dborder = border*2
@@ -399,7 +399,7 @@ class BaseDraw(ILI):
             portion = 32
             pixels = width * (height // portion + 1)
             pixels = pixels if height >= portion else (width * height)//2+1
-            word = self._get_Npix_monoword(fillcolor) * pixels
+            word = self._get_Npix_monoword(infill) * pixels
             self._gcCollect()
             i=0
             times = 16*2 if height < portion + 1 else portion + 1
@@ -470,6 +470,13 @@ class BaseDraw(ILI):
                 self.drawHline(xNeg, Y, length-xNeg, color, width=4)
             tempY = Y
 
+    def _return_chpos(self, chrwidth, scale):
+        if chrwidth == 1:
+            chpos = scale + 1 if scale > 2 else scale - 1
+        else:
+            chpos = scale
+        return chpos
+
 class BaseChars(ILI, BaseDraw):
     def __init__(self, color=BLACK, font=None, bgcolor=None, scale=1, **kwargs):
         super(BaseChars, self).__init__(**kwargs)
@@ -530,11 +537,12 @@ class BaseChars(ILI, BaseDraw):
         self._write_data(words)
         self._graph_orientation()
 
-    def printChar(self, char, x, y, scale=None):
+    def printChar(self, char, x, y, scale=None, _pl=False):
         if scale is None:
             scale = self._fontscale
         font = self._font
-        self._check_portrait()
+        if not _pl:
+            self._check_portrait()
         self._fontscale = scale = 5 if scale >= 5 else scale
         index = ord(char)
         height = font['height']
@@ -573,11 +581,8 @@ class BaseChars(ILI, BaseDraw):
                     y += (font['height'] + 2) * scale
                 for i in range(lnword):
                     chrwidth = len(font[ord(word[i])])
-                    self.printChar(word[i], x, y, scale=scale)
-                    if chrwidth == 1:
-                        chpos = scale + 1 if scale > 2 else scale - 1
-                    else:
-                        chpos = scale
+                    self.printChar(word[i], x, y, scale=scale, _pl=True)
+                    chpos = self._return_chpos(chrwidth, scale)
                     x += self._asm_get_charpos(chrwidth, chpos, 3)
                 x += self._asm_get_charpos(font['width']//4, chpos, 3)
             x = X
@@ -789,18 +794,21 @@ class BaseWidgets(BaseDraw, BaseImages):
         super(BaseWidgets, self).__init__(**kwargs)
 
     def _charwidth_mapper(self, char):
+        scale = self._fontscale
         try:
-            return len(self._font[ord(char)]) + 4                          # 4 is a space between word chars
+            chrwidth = len(self._font[ord(char)])            # 4 is a space between word chars
+            chpos = self._return_chpos(chrwidth, scale)
+            return (chrwidth + chpos + 3) * scale
         except KeyError:
-            return 6 if ord(char) == 32 else 0                             # if space between words
+            return 5 * self._fontscale if ord(char) == 32 else 0             # if space between words
 
     def _get_maxstrW(self, width):
-        return width - 20 - self._border * 2
+        return (width - 20 - self._border * 2)
 
     def _get_widgW(self, width):
         return width + 20 + self._border * 2
 
-    def _get_swdth(self, string):
+    def _get_strW(self, string):
         return sum(map(self._charwidth_mapper, string))
 
     def _get_str_structure(self, string, xy, width, height):
@@ -808,28 +816,27 @@ class BaseWidgets(BaseDraw, BaseImages):
         sided = 5
         maxwidgW = self.TFTWIDTH - x - sided if width is None else width      # max widget width
         maxstrW  = self._get_maxstrW(maxwidgW)                                # max string width
-        strwidth = sum(map(self._charwidth_mapper, string)) * self._fontscale # current string width
+        strwidth = self._get_strW(string)                                     # current string width
+        border = self._border
+        structure = [0, height + 6 * self._fontscale + border * 2]
         if strwidth >= maxstrW:
-            structure = [0, 0]
             words = string.split(' ')
-            wcount = len(words)
-            structure.extend([(self._get_swdth(w), w) for w in words])
+            structure.extend([(self._get_strW(w), w) for w in words])
             lines = structure[2:]
-            widgW = self._get_widgW(max(lines)[0])
-            widgH = height * len(lines)
-            structure[0] = widgW
-            structure[1] = widgH
+            structure[0] = self._get_widgW(max(lines)[0])
+            linen = len(lines)
+            structure[1] = height * linen + 3 * self._fontscale * (linen + 1) + border * 2
             return structure
         else:
-            widgW = self._get_widgW(strwidth)
-            return (widgW, height, (strwidth, string),)
-
+            structure[0] = self._get_widgW(strwidth)
+            structure.extend([(strwidth, string)])
+            return structure
 
     # WORK IN PROGRESS
     # TODO:
     # 1. set height for multiply lines if dims are not defined
     # 2. every line align by center
-    def label(self, x, y, color, fillcolor, string, width=None,
+    def label(self, x, y, color, infill, string, width=None,
                 strobj=None, border=1):
         if strobj is None:
             from exceptions import NoneStringObject
@@ -837,23 +844,21 @@ class BaseWidgets(BaseDraw, BaseImages):
         self._font = strobj.font
         self._fontscale = scale = strobj._fontscale
         self._border = border
-        strheight = (strobj.font['height'] + 6) * scale
-        # testing
+        strheight = (strobj.font['height']) * scale
         structure = self._get_str_structure(string, (x, y), width, strheight)
         lines = structure[2:]
         linen = len(lines)
         width, height = structure[:2]
-        ###
         self._gcCollect()
-        self.drawRect(x, y, width, height, color, border=border, fillcolor=fillcolor)
+        self.drawRect(x, y, width, height, color, border=border, infill=infill)
         self._gcCollect()
-        # setting up string x and y point
+        Y = ((height - border * 2) // linen - strheight) // 2
+        strY = 5 * scale + y + border
         for line in lines:
             strwidth, string = line
             strX = ((width - strwidth) // 2) + x
-            # TODO: find solution
-            strY = (strheight) // 2 + y
             strobj.printLn(string, strX, strY)
+            strY += Y + strheight
 
         #x1, y1 = x + width, y + height
         #return x, y, x1, y1
@@ -928,101 +933,20 @@ class LCD(BaseWidgets):
         return super(LCD, self).label(*args, **kwargs)
 
     @property
-    def portarit(self):
-        return self.portrait
+    def portrait(self):
+        return super(LCD, self).portrait()
+
+    @portrait.setter
+    def portrait(self, portr):
+        if isinstance(portr, bool):
+            ILI._portrait = portr
+        else:
+            raise PortraitError
+        super(LCD, self)._setWH()
 
     @property
     def resolution(self):
         print(self.TFTWIDTH, self.TFTHEIGHT)
-
-class BaseTests(LCD):
-
-    def __init__(self, **kwargs):
-        super(BaseTests, self).__init__(**kwargs)
-
-    def charsTest(self, color, font=None, bgcolor=None, scale=1):
-        ch = self.initCh(color=color, font=font, bgcolor=bgcolor, scale=scale)
-        scale = 3 if scale >= 3 else 1
-        x = y = 5
-        font = ch._font
-        fwidth = font['width']
-        for i in range(33, 256):
-            try:
-                chrwidth = len(font[i])
-            except KeyError:
-                continue
-            ch.printChar(chr(i), x, y, scale=scale)
-            x += self._asm_get_charpos(chrwidth, scale, 3)
-            if x > (self.TFTWIDTH-fwidth*scale):
-                x = 10
-                y = self._asm_get_charpos(font['height'], scale, y)
-
-    def renderImageTest(self, cached=True, path=imgdir, cpath=cachedir,
-                    delay=0, bgcolor=BLACK): # images/cache path
-        starttime = pyb.micros()//1000
-        cachelist = os.listdir(imgcachepath)
-        print(cachedir+'d ' + imgdir + ':', cachelist)
-        for image in os.listdir(path):
-            if image != cpath and image.endswith('bmp'):
-                self.renderBmp(image, cached=cached, bgcolor=bgcolor)
-                if delay:
-                    pyb.delay(delay)
-        return (pyb.micros()//1000-starttime)/1000
-
-    def charsBGcolorTest(self, color=BLACK, font=None, scale=3):
-        if font is None:
-            from exceptions import NoneTypeFont
-            raise NoneTypeFont
-        self.portrait = True
-        s = self.initCh(font=font, color=color, scale=scale)
-        x = self.TFTWIDTH//2 - (s.font['width']//2) * scale
-        y = self.TFTHEIGHT//2 - (s.font['height']//2) * scale
-        colors = [BLACK, NAVY, DARKGREEN, DARKCYAN, MAROON, PURPLE, OLIVE,
-                LIGHTGREY, DARKGREY, BLUE, GREEN, CYAN, RED, MAGENTA, YELLOW,
-                WHITE, ORANGE, GREENYELLOW]
-        j = 33
-        self._gcCollect()
-        for i in range((255-33)//16):
-            for clr in colors:
-                if isinstance(color, tuple) and color != clr:
-                    self.fillMonocolor(clr)
-                    s.printChar(chr(j), x, y)
-                    j += 1
-                    pyb.delay(100)
-        self._gcCollect()
-
-    def rgbInfillTest(self):
-        self.portrait = True
-        red = green = blue = 0
-        for i in range(2**16):
-            if red > 31:
-                red = 0
-            if green > 63:
-                green = 0
-            self.fillMonocolor((red, green, blue))
-            red += 1
-            if red == 32:
-                green += 1
-            if green == 64:
-                blue += 1
-                print(i, 'blue is', blue)
-
-    def rectInfillTest(self, portrait=True, border=1):
-        strobj = self.initCh(font='Arial_14', color=BLACK)
-        prevportr = ILI._portrait
-        if prevportr != portrait:
-            self.portrait = portrait
-        height = self.TFTHEIGHT
-        width = self.TFTWIDTH
-        self._gcCollect()
-        for i in range(1+border*2, height-40):
-            self.drawRect(0, 0, width, 30, DARKGREY, border=0)
-            self.drawRect(0, 30, width, height-30, YELLOW, border=0)
-            string = 'height = {0}px'.format(i)
-            self.label(5, 2, BLACK, LIGHTGREY, string, strobj=strobj)
-            self.drawRect(5, 35, width-10, i, BLUE, fillcolor=GREEN, border=border)
-            pyb.delay(500)
-        self.portrait = prevportr
 
 if __name__ == '__main__':
 
@@ -1030,7 +954,7 @@ if __name__ == '__main__':
 
     d = LCD() # or d = LCD(portrait=False) for landscape
     d.fillMonocolor(GREEN)
-    d.drawRect(5, 5, 230, 310, BLUE, border=10, fillcolor=ORANGE)
+    d.drawRect(5, 5, 230, 310, BLUE, border=10, infill=ORANGE)
     d.drawOvalFilled(120, 160, 60, 120, BLUE)
     d.drawCircleFilled(120, 160, 55, RED)
     d.drawCircle(120, 160, 59, GREEN, border=5)
