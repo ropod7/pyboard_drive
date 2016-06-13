@@ -90,7 +90,7 @@ from colors import *
 
 micropython.alloc_emergency_exception_buf(100)
 
-# next 3 variables are constants, using in BaseImages class
+# following 3 variables are constants, using in BaseImages class
 imgdir = 'images'
 cachedir = 'cache'
 imgcachepath = imgdir + '/' + cachedir
@@ -286,6 +286,13 @@ class ILI(object):
         word = struct.pack('>H', word)
         return word
 
+    def _return_chpos(self, chrwidth, scale):
+        if chrwidth == 1:
+            chpos = scale + 1 if scale > 2 else scale - 1
+        else:
+            chpos = scale
+        return chpos
+
     # Method writed by MCHobby https://github.com/mchobby
     # Transform a RGB888 color to RGB565 color tuple.
     def rgbTo565(self, r, g, b):
@@ -300,7 +307,8 @@ class ILI(object):
         if isinstance(portr, bool):
             ILI._portrait = portr
         else:
-            raise PortraitError
+            from exceptions import PortraitBoolError
+            raise PortraitBoolError
         self._setWH()
 
 class BaseDraw(ILI):
@@ -469,13 +477,6 @@ class BaseDraw(ILI):
                 length = xPos+1
                 self.drawHline(xNeg, Y, length-xNeg, color, width=4)
             tempY = Y
-
-    def _return_chpos(self, chrwidth, scale):
-        if chrwidth == 1:
-            chpos = scale + 1 if scale > 2 else scale - 1
-        else:
-            chpos = scale
-        return chpos
 
 class BaseChars(ILI, BaseDraw):
     def __init__(self, color=BLACK, font=None, bgcolor=None, scale=1, **kwargs):
@@ -701,7 +702,7 @@ class BaseImages(ILI):
     # TODO:
     # 1. resize large images to screen resolution
     def cacheImage(self, image, imgdir=imgdir):
-        # setting portrait, because functionality not full at this moment
+        # setting portrait mode, because functionality not full at this moment
         self.setPortrait(True)
         self.fillMonocolor(BLACK)
         strings = self.initCh(color=DARKGREY, font='Arial_14')
@@ -788,6 +789,7 @@ class Chars(BaseChars):
             raise PortraitBoolError
         self._setWH()
 
+# should be replaced to own module
 class BaseWidgets(BaseDraw, BaseImages):
 
     def __init__(self, **kwargs):
@@ -796,9 +798,9 @@ class BaseWidgets(BaseDraw, BaseImages):
     def _charwidth_mapper(self, char):
         scale = self._fontscale
         try:
-            chrwidth = len(self._font[ord(char)])            # 4 is a space between word chars
+            chrwidth = len(self._font[ord(char)])
             chpos = self._return_chpos(chrwidth, scale)
-            return (chrwidth + chpos + 3) * scale
+            return (chrwidth + chpos + 3 - scale) * scale
         except KeyError:
             return 5 * self._fontscale if ord(char) == 32 else 0             # if space between words
 
@@ -814,52 +816,74 @@ class BaseWidgets(BaseDraw, BaseImages):
     def _get_str_structure(self, string, xy, width, height):
         x, y = xy
         sided = 5
-        maxwidgW = self.TFTWIDTH - x - sided if width is None else width      # max widget width
-        maxstrW  = self._get_maxstrW(maxwidgW)                                # max string width
+        maxW = self.TFTWIDTH - x - sided if width is None else width          # max widget width
+        maxH = self.TFTHEIGHT - y - sided - 2 if height is None else height   # max widget width
+        maxstrW  = self._get_maxstrW(maxW)                                    # max string width
         strwidth = self._get_strW(string)                                     # current string width
         border = self._border
-        structure = [0, height + 6 * self._fontscale + border * 2]
+        strheight = self._font['height'] * self._fontscale
+        # setting [widgetWidth, widgetHeight, strHeight] to the structure
+        structure = [0, strheight + 6 * self._fontscale + border * 2, strheight]
         if strwidth >= maxstrW:
             words = string.split(' ')
-            structure.extend([(self._get_strW(w), w) for w in words])
-            lines = structure[2:]
-            structure[0] = self._get_widgW(max(lines)[0])
+            structure.extend([[self._get_strW(w), w] for w in words])
+            lines = structure[3:]
             linen = len(lines)
-            structure[1] = height * linen + 3 * self._fontscale * (linen + 1) + border * 2
-            return structure
+            widgH = strheight * linen + 3 * self._fontscale * (linen + 1) + border * 2
+            structure[1] = widgH if height is None else maxH
+            if widgH > maxH:
+                hidden = '(..)'
+                parts = widgH // (linen + 1)
+                linen = maxH // (strheight + 3 * self._fontscale)
+                strheight = strheight * linen + 3 * (linen-1)
+                structure = structure[:linen + 3]
+                structure[-1][1] += hidden
+                strW = self._get_strW(structure[-1][1])
+                if strW > maxstrW:
+                    structure[-1][1] = hidden
+                    strW = self._get_strW(structure[-1][1])
+                structure[-1][0] = strW
+                print('NB: widget height too low')
+            else:
+                strheight = widgH - 6 * self._fontscale - border * 2
+
+            largest = max(lines)[0]
+            structure[0] = self._get_widgW(largest) if width is None else maxW
+            structure[2] = strheight
+            assert largest < maxW, 'widget width too low'
         else:
             structure[0] = self._get_widgW(strwidth)
             structure.extend([(strwidth, string)])
-            return structure
+        return structure
 
     # WORK IN PROGRESS
     # TODO:
-    # 1. set height for multiply lines if dims are not defined
-    # 2. every line align by center
-    def label(self, x, y, color, infill, string, width=None,
+    # 1. make widget smarter at string rendering
+    def label(self, x, y, color, infill, string, width=None, height=None,
                 strobj=None, border=1):
+        # if width and height are defined, string cuts to widget scale
         if strobj is None:
             from exceptions import NoneStringObject
             raise NoneStringObject
+        border = 10 if border > 10 else border
         self._font = strobj.font
         self._fontscale = scale = strobj._fontscale
         self._border = border
         strheight = (strobj.font['height']) * scale
-        structure = self._get_str_structure(string, (x, y), width, strheight)
-        lines = structure[2:]
+        structure = self._get_str_structure(string, (x, y), width, height)
+        lines = structure[3:]
         linen = len(lines)
-        width, height = structure[:2]
+        width, height, strheight = structure[:3]
         self._gcCollect()
         self.drawRect(x, y, width, height, color, border=border, infill=infill)
         self._gcCollect()
-        Y = ((height - border * 2) // linen - strheight) // 2
-        strY = 5 * scale + y + border
+        Y = strheight // linen
+        strY = (height - strheight) // 2 + y + border * 2
         for line in lines:
             strwidth, string = line
             strX = ((width - strwidth) // 2) + x
             strobj.printLn(string, strX, strY)
-            strY += Y + strheight
-
+            strY += Y
         #x1, y1 = x + width, y + height
         #return x, y, x1, y1
 
@@ -941,7 +965,8 @@ class LCD(BaseWidgets):
         if isinstance(portr, bool):
             ILI._portrait = portr
         else:
-            raise PortraitError
+            from exceptions import PortraitBoolError
+            raise PortraitBoolError
         super(LCD, self)._setWH()
 
     @property
