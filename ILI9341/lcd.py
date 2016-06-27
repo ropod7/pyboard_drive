@@ -406,11 +406,11 @@ class BaseDraw(ILI):
             # if MemoryError, try to set higher portion value
             portion = 32
             pixels = width * (height // portion + 1)
-            pixels = pixels if height >= portion else (width * height)//2+1
-            word = self._get_Npix_monoword(infill) * pixels
+            pixels = pixels if height >= portion else (width * height) // 3 + 1
+            times = 16 * 2 if height < portion + 1 else portion + 1
             self._gcCollect()
-            i=0
-            times = 16*2 if height < portion + 1 else portion + 1
+            word = self._get_Npix_monoword(infill) * pixels
+            i = 0
             while i < (times):
                 self._write_data(word)
                 i+=1
@@ -802,7 +802,7 @@ class BaseWidgets(BaseDraw, BaseImages):
             chpos = self._return_chpos(chrwidth, scale)
             return (chrwidth + chpos + 3 - scale) * scale
         except KeyError:
-            return 5 * self._fontscale if ord(char) == 32 else 0             # if space between words
+            return 5 * self._fontscale if ord(char) == 32 else 0              # if space between words
 
     def _get_maxstrW(self, width):
         return (width - 20 - self._border * 2)
@@ -810,8 +810,15 @@ class BaseWidgets(BaseDraw, BaseImages):
     def _get_widgW(self, width):
         return width + 20 + self._border * 2
 
+    @micropython.viper
     def _get_strW(self, string):
         return sum(map(self._charwidth_mapper, string))
+
+    def _multiply_lines(self, data, maxW):
+        # take logic compute data from "if strwidth >= maxstrW:" block
+        # create algorythm to compute suitable line with number of words,
+        # that are completely stand to the widget width
+        pass
 
     def _get_str_structure(self, string, xy, width, height):
         x, y = xy
@@ -958,7 +965,7 @@ class LCD(BaseWidgets):
 
     @property
     def portrait(self):
-        return super(LCD, self).portrait()
+        return super(LCD, self).portrait
 
     @portrait.setter
     def portrait(self, portr):

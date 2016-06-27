@@ -1,13 +1,19 @@
-from lcd import LCD
+import os
+import gc
 
-class BaseTests(LCD):
+import pyb, micropython
+
+from lcd import LCD, Chars, ILI, imgdir, cachedir, imgcachepath
+from colors import *
+
+class BaseTests(LCD, Chars):
 
     def __init__(self, **kwargs):
         super(BaseTests, self).__init__(**kwargs)
 
-    def charsTest(self, color, font=None, bgcolor=None, scale=1):
-        ch = self.initCh(color=color, font=font, bgcolor=bgcolor, scale=scale)
-        scale = 3 if scale >= 3 else 1
+    def charsTest(self, color, font=None, scale=1):
+        ch = self.initCh(color=color, font=font, scale=scale)
+        scale = 3 if scale >= 3 else scale
         x = y = 5
         font = ch._font
         fwidth = font['width']
@@ -34,7 +40,7 @@ class BaseTests(LCD):
                     pyb.delay(delay)
         return (pyb.micros()//1000-starttime)/1000
 
-    def charsBGcolorTest(self, color=BLACK, font=None, scale=3):
+    def charsBGcolorTest(self, color=BLACK, font=None, scale=1):
         if font is None:
             from exceptions import NoneTypeFont
             raise NoneTypeFont
@@ -79,13 +85,17 @@ class BaseTests(LCD):
             self.portrait = portrait
         height = self.TFTHEIGHT
         width = self.TFTWIDTH
+        self.drawRect(0, 0, width, 30, DARKCYAN, border=0)
+        self.drawHline(0, 29, width, BLACK, width=1)
+        string = 'height:'
+        self.label(5, 2, BLACK, LIGHTGREY, string, strobj=strobj)
         self._gcCollect()
         for i in range(1+border*2, height-40):
-            self.drawRect(0, 0, width, 30, DARKGREY, border=0)
+            string = '{0}px'.format(i)
+            self.drawRect(120, 0, 50, 28, DARKCYAN, border=0)
+            self.label(76, 2, BLACK, LIGHTGREY, string, strobj=strobj)
             self.drawRect(0, 30, width, height-30, YELLOW, border=0)
-            string = 'height = {0}px'.format(i)
-            self.label(5, 2, BLACK, LIGHTGREY, string, strobj=strobj)
-            self.drawRect(5, 35, width-10, i, BLUE, fillcolor=GREEN, border=border)
+            self.drawRect(5, 35, width-10, i, BLUE, infill=GREEN, border=border)
+            self._gcCollect()
             pyb.delay(500)
         self.portrait = prevportr
-
