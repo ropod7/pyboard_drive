@@ -27,6 +27,12 @@
 #    opportunities of reading from SD card. Earlier versions are useless
 #    in this driver scope.
 #
+#    For better running time of rendering .bmp images, source image will be
+#    cached by running:
+#        lcd.cacheAllImages()
+#    or:
+#        lcd.cacheImage(BMPfilename)
+#
 # DESCRIPTION:
 #
 # lcd.py - contains ILI TFT LCD controllers driving classes
@@ -45,10 +51,10 @@
 #    height is 240px
 #
 # Template method for orientation management by Accel:
-#    Changing mode on the air by calling:
-#    lcd.setPortrait( True [or False] )
-#    OR:
-#    lcd.portrait = True [or False]
+#    Changing mode on the fly by calling:
+#        lcd.setPortrait( True [or False] )
+#    or:
+#        lcd.portrait = True [or False]
 #
 # User don't need to import fonts, they imports by python code
 # Avaliable fonts:
@@ -195,6 +201,8 @@ class ILI(object):
         ILI._csx.high()
 
     # for now decoded just recv color (or data readed from memory)
+    # TODO:
+    # 1. check MAGENTA color decoding
     def _decode_recv_data(self, data):
         # For example:
         #    1. recieving sets 5 bytes
@@ -312,8 +320,6 @@ class ILI(object):
         self._setWH()
 
 class BaseDraw(ILI):
-    def __init__(self, **kwargs):
-        super(BaseDraw, self).__init__(**kwargs)
 
     def _set_ortho_line(self, width, length, color):
         pixels = width * (length+1)
@@ -591,9 +597,6 @@ class BaseChars(ILI, BaseDraw):
 
 class BaseImages(ILI):
 
-    def __init__(self, **kwargs):
-        super(BaseImages, self).__init__(**kwargs)
-
     # solution from forum.micropython.org
     @staticmethod
     @micropython.asm_thumb
@@ -752,9 +755,6 @@ class BaseImages(ILI):
 
 class Chars(BaseChars):
 
-    def __init__(self, *args, **kwargs):
-        super(Chars, self).__init__(*args, **kwargs)
-
     def printChar(self, *args, **kwargs):
         super(Chars, self).printChar(*args, **kwargs)
 
@@ -792,18 +792,13 @@ class Chars(BaseChars):
 # should be replaced to own module
 class BaseWidgets(BaseDraw, BaseImages):
 
-    def __init__(self, **kwargs):
-        super(BaseWidgets, self).__init__(**kwargs)
-
     def _charwidth_mapper(self, char):
-        scale = self._fontscale
         try:
             chrwidth = len(self._font[ord(char)])
-            chpos = self._return_chpos(chrwidth, scale) + 3 + chrwidth
-            chpos = chpos if scale is 1 else chpos - scale
-            return chpos * scale
+            chpos = self._return_chpos(chrwidth, 1) + 3 + chrwidth
+            return chpos
         except KeyError:
-            return 5 * scale if ord(char) is 32 else 0                         # if space between words
+            return 5 if ord(char) is 32 else 0                         # if space between words
 
     def _get_maxstrW(self, width):
         return (width - 20 - self._border * 2)
@@ -817,15 +812,19 @@ class BaseWidgets(BaseDraw, BaseImages):
 
     def _compute_lines(self, string, maxstrW):
         words = string.split(' ')
-        length = [0 for i in words]
+        length = [0]
         lines = [[]]
         i = 0
         for word in words:
             spaced = word + chr(32)
             temp = self._get_strW(spaced)
             if length[i] + temp >= maxstrW:
+                if not i and len(lines[0]) is 0:                               # if first word is too large
+                    print(self._asserts)                                       # return '(..)'
+                    return [self._blank]
                 i += 1
                 lines.append([])
+                length.append(0)
                 temp -= self._get_strW(chr(32))
             length[i] += temp
             lines[i].append(word)
@@ -834,88 +833,92 @@ class BaseWidgets(BaseDraw, BaseImages):
 
     def _get_str_structure(self, string, xy, width, height):
         x, y = xy
-        sided = 5
-        maxW = self.TFTWIDTH - x - sided if width is None else width           # max widget width
-        maxH = self.TFTHEIGHT - y - sided - 2 if height is None else height    # max widget width
+        maxW = width if width and width < self.TFTWIDTH else self.TFTWIDTH - x - 5        # max widget width
+        maxH = height if height and height < self.TFTHEIGHT else self.TFTHEIGHT - y - 5   # max widget width
         maxstrW  = self._get_maxstrW(maxW)                                     # max string width
         strwidth = self._get_strW(string)                                      # current string width
         border = self._border
-        strheight = self._font['height'] * self._fontscale
+        strheight = self._font['height']
+        assert strheight < maxH, self._asserts
+        widgH = strheight + 6 + border * 2 if height is None else maxH
         # setting [widgetWidth, widgetHeight, strHeight] to the structure
-        structure = [0, strheight + 6 * self._fontscale + border * 2, strheight]
+        structure = [0, widgH, strheight]
+        # if width and height are defined, large string cuts to widget scale
         if strwidth >= maxstrW:
             lines = self._compute_lines(string, maxstrW)
             structure.extend([[self._get_strW(l), l] for l in lines])
             lines = structure[3:]
             linen = len(lines)
-            widgH = strheight * linen + 3 * self._fontscale * (linen + 1) + border * 2
+            widgH = strheight * linen + 3 * (linen + 1) + border * 2
             structure[1] = widgH if height is None else maxH
             if widgH > maxH:
-                hidden = '(..)'
-                parts = widgH // (linen + 1)
-                linen = maxH // (strheight + 3 * self._fontscale)
+                linen = maxH // (strheight + 3)
                 strheight = strheight * linen + 3 * (linen-1)
                 structure = structure[:linen + 3]
-                structure[-1][1] += hidden
+                structure[-1][1] += self._blank
                 strW = self._get_strW(structure[-1][1])
                 if strW > maxstrW:
-                    structure[-1][1] = hidden
+                    structure[-1][1] = self._blank
                     strW = self._get_strW(structure[-1][1])
                 structure[-1][0] = strW
-                print('NB: widget height too low')
+                print(self._asserts)
             else:
-                strheight = widgH - 6 * self._fontscale - border * 2
+                strheight = widgH - 6 - border * 2
 
             largest = max(lines)[0]
             structure[0] = self._get_widgW(largest) if width is None else maxW
             structure[2] = strheight
-            assert largest < maxW, 'widget width too low'
+            assert largest < maxW, self._asserts
         else:
-            structure[0] = self._get_widgW(strwidth)
+            structure[0] = self._get_widgW(strwidth) if width is None else maxW
             structure.extend([(strwidth, string)])
+        self._gcCollect()
         return structure
 
     # WORK IN PROGRESS
     # TODO:
-    # 1.
-    def label(self, x, y, color, infill, string, width=None, height=None,
+    # 1. ready for touchscreen
+    # 2. define widget id (try to get id by widget hash(widget))
+    def _widget(self, x, y, color, infill, string, width=None, height=None,
                 strobj=None, border=1):
-        # if width and height are defined, string cuts to widget scale
         if strobj is None:
             from exceptions import NoneStringObject
             raise NoneStringObject
         border = 10 if border > 10 else border
+        self._blank = '(..)'
+        self._asserts = 'widget dims too low'
         self._font = strobj.font
-        self._fontscale = scale = strobj._fontscale
+        strobj._fontscale = 1                                                  # widget font scale always is 1
         self._border = border
-        strheight = (strobj.font['height']) * scale
+        strheight = strobj.font['height']
         structure = self._get_str_structure(string, (x, y), width, height)
         lines = structure[3:]
         linen = len(lines)
         width, height, strheight = structure[:3]
         self._gcCollect()
         self.drawRect(x, y, width, height, color, border=border, infill=infill)
-        self._gcCollect()
-        Y = strheight // linen
-        strY = (height - strheight) // 2 + y + border * 2
+        Y = strheight // linen if linen > 1 else 0
+        strY = (height - strheight) // 2 + y + 3
         for line in lines:
             strwidth, string = line
-            strX = ((width - strwidth) // 2) + x
+            strX = ((width - strwidth) // 2) + x + 3
             strobj.printLn(string, strX, strY)
             strY += Y
         x1, y1 = x + width, y + height
         return x, y, x1, y1
 
-    def button(self):
-        pass
+class Widgets(BaseWidgets):
+
+    def label(self, *args, **kwargs):
+        super(Widgets, self)._widget(*args, **kwargs)
+
+    def button(self, *args, **kwargs):
+        return super(Widgets, self)._widget(*args, **kwargs)
 
     def entry(self):
         pass
 
-class LCD(BaseWidgets):
-
-    def __init__(self, **kwargs):
-        super(LCD, self).__init__(**kwargs)
+class LCD(Widgets):
 
     def reset(self):
         super(LCD, self).reset()
@@ -991,25 +994,3 @@ class LCD(BaseWidgets):
     @property
     def resolution(self):
         print(self.TFTWIDTH, self.TFTHEIGHT)
-
-if __name__ == '__main__':
-
-    starttime = pyb.micros()//1000
-
-    d = LCD() # or d = LCD(portrait=False) for landscape
-    d.fillMonocolor(GREEN)
-    d.drawRect(5, 5, 230, 310, BLUE, border=10, infill=ORANGE)
-    d.drawOvalFilled(120, 160, 60, 120, BLUE)
-    d.drawCircleFilled(120, 160, 55, RED)
-    d.drawCircle(120, 160, 59, GREEN, border=5)
-
-    c = d.initCh(color=BLACK, font='Arial_14') # define string obj
-    c.printChar('@', 30, 30)
-    c.printLn('Hello BaseChar class', 30, 290)
-
-    d.setPortrait(False)    # Changing mode to landscape
-
-    d.renderBmp("test.bmp", (0, 0))
-
-    # last time executed in: 1.379 seconds
-    print('executed at:', (pyb.micros()//1000-starttime)/1000, 'seconds')
