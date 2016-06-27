@@ -799,10 +799,11 @@ class BaseWidgets(BaseDraw, BaseImages):
         scale = self._fontscale
         try:
             chrwidth = len(self._font[ord(char)])
-            chpos = self._return_chpos(chrwidth, scale)
-            return (chrwidth + chpos + 3 - scale) * scale
+            chpos = self._return_chpos(chrwidth, scale) + 3 + chrwidth
+            chpos = chpos if scale is 1 else chpos - scale
+            return chpos * scale
         except KeyError:
-            return 5 * self._fontscale if ord(char) == 32 else 0              # if space between words
+            return 5 * scale if ord(char) is 32 else 0                         # if space between words
 
     def _get_maxstrW(self, width):
         return (width - 20 - self._border * 2)
@@ -814,26 +815,37 @@ class BaseWidgets(BaseDraw, BaseImages):
     def _get_strW(self, string):
         return sum(map(self._charwidth_mapper, string))
 
-    def _multiply_lines(self, data, maxW):
-        # take logic compute data from "if strwidth >= maxstrW:" block
-        # create algorythm to compute suitable line with number of words,
-        # that are completely stand to the widget width
-        pass
+    def _compute_lines(self, string, maxstrW):
+        words = string.split(' ')
+        length = [0 for i in words]
+        lines = [[]]
+        i = 0
+        for word in words:
+            spaced = word + chr(32)
+            temp = self._get_strW(spaced)
+            if length[i] + temp >= maxstrW:
+                i += 1
+                lines.append([])
+                temp -= self._get_strW(chr(32))
+            length[i] += temp
+            lines[i].append(word)
+        lines = [' '.join(line) for line in lines]
+        return lines
 
     def _get_str_structure(self, string, xy, width, height):
         x, y = xy
         sided = 5
-        maxW = self.TFTWIDTH - x - sided if width is None else width          # max widget width
-        maxH = self.TFTHEIGHT - y - sided - 2 if height is None else height   # max widget width
-        maxstrW  = self._get_maxstrW(maxW)                                    # max string width
-        strwidth = self._get_strW(string)                                     # current string width
+        maxW = self.TFTWIDTH - x - sided if width is None else width           # max widget width
+        maxH = self.TFTHEIGHT - y - sided - 2 if height is None else height    # max widget width
+        maxstrW  = self._get_maxstrW(maxW)                                     # max string width
+        strwidth = self._get_strW(string)                                      # current string width
         border = self._border
         strheight = self._font['height'] * self._fontscale
         # setting [widgetWidth, widgetHeight, strHeight] to the structure
         structure = [0, strheight + 6 * self._fontscale + border * 2, strheight]
         if strwidth >= maxstrW:
-            words = string.split(' ')
-            structure.extend([[self._get_strW(w), w] for w in words])
+            lines = self._compute_lines(string, maxstrW)
+            structure.extend([[self._get_strW(l), l] for l in lines])
             lines = structure[3:]
             linen = len(lines)
             widgH = strheight * linen + 3 * self._fontscale * (linen + 1) + border * 2
@@ -865,7 +877,7 @@ class BaseWidgets(BaseDraw, BaseImages):
 
     # WORK IN PROGRESS
     # TODO:
-    # 1. make widget smarter at string rendering
+    # 1.
     def label(self, x, y, color, infill, string, width=None, height=None,
                 strobj=None, border=1):
         # if width and height are defined, string cuts to widget scale
@@ -891,8 +903,8 @@ class BaseWidgets(BaseDraw, BaseImages):
             strX = ((width - strwidth) // 2) + x
             strobj.printLn(string, strX, strY)
             strY += Y
-        #x1, y1 = x + width, y + height
-        #return x, y, x1, y1
+        x1, y1 = x + width, y + height
+        return x, y, x1, y1
 
     def button(self):
         pass
