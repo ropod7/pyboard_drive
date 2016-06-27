@@ -1000,4 +1000,4 @@ if __name__ == '__main__':
     d.renderBmp("test.bmp", (0, 0))
 
     # last time executed in: 1.379 seconds
-    print('executed in:', (pyb.micros()//1000-starttime)/1000, 'seconds')
+    print('executed at:', (pyb.micros()//1000-starttime)/1000, 'seconds')
