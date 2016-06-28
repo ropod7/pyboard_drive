@@ -27,6 +27,9 @@
 #    opportunities of reading from SD card. Earlier versions are useless
 #    in this driver scope.
 #
+#    BMP images must to be created in 16 bit (R5,G6,B5) mode
+#    For this approach see GIMP export features
+#
 #    For better running time of rendering .bmp images, source image will be
 #    cached by running:
 #        lcd.cacheAllImages()
