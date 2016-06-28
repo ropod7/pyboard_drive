@@ -27,14 +27,16 @@
 #    opportunities of reading from SD card. Earlier versions are useless
 #    in this driver scope.
 #
-#    BMP images must to be created in 16 bit (R5,G6,B5) mode
-#    For this approach see GIMP export features
+#    BMP images must to be created in 16 bit (R5,G6,B5) mode.
+#    For this approach see GIMP export features.
+#
+#    Driver supports at this moment images <= 240x320px.
 #
 #    For better running time of rendering .bmp images, source image will be
 #    cached by running:
 #        lcd.cacheAllImages()
 #    or:
-#        lcd.cacheImage(BMPfilename)
+#        lcd.cacheImage(BMPfilename) for single image
 #
 # DESCRIPTION:
 #
@@ -121,20 +123,20 @@ class ILI(object):
     _dcx  = object()
     _portrait  = True
 
-    _tftwidth  = 240   # TFT width Constant
-    _tftheight = 320   # TFT height Constant
+    _tftwidth  = 240                                                           # TFT width Constant
+    _tftheight = 320                                                           # TFT height Constant
 
-    _curwidth  = 240   # Current TFT width
-    _curheight = 320   # Current TFT height
+    _curwidth  = 240                                                           # Current TFT width
+    _curheight = 320                                                           # Current TFT height
 
     def __init__(self, rstPin='X3', csxPin='X4', dcxPin='X5', port=1, rate=rate,
                 chip='ILI9341', portrait=True):
         if ILI._cnt == 0:
             ILI._regs = regs[chip]
             ILI._spi  = SPI(port, SPI.MASTER, baudrate=rate, polarity=1, phase=1)
-            ILI._rst  = Pin(rstPin, Pin.OUT_PP)    # Reset Pin
-            ILI._csx  = Pin(csxPin, Pin.OUT_PP)    # CSX Pin
-            ILI._dcx  = Pin(dcxPin, Pin.OUT_PP)    # D/Cx Pin
+            ILI._rst  = Pin(rstPin, Pin.OUT_PP)                                # Reset Pin
+            ILI._csx  = Pin(csxPin, Pin.OUT_PP)                                # CSX Pin
+            ILI._dcx  = Pin(dcxPin, Pin.OUT_PP)                                # D/Cx Pin
             self.reset()
             self._initILI()
 
@@ -144,9 +146,9 @@ class ILI(object):
 
     @micropython.viper
     def reset(self):
-        ILI._rst.low()                #
-        pyb.delay(1)                  #    RESET LCD SCREEN
-        ILI._rst.high()               #
+        ILI._rst.low()                                                         #
+        pyb.delay(1)                                                           #    RESET LCD SCREEN
+        ILI._rst.high()                                                        #
 
     @micropython.viper
     def setPortrait(self, portrait):
@@ -168,20 +170,20 @@ class ILI(object):
 
     @micropython.viper
     def _initILI(self):
-        self._write_cmd(ILI._regs['LCDOFF'])   # Display OFF
+        self._write_cmd(ILI._regs['LCDOFF'])                                   # Display OFF
         pyb.delay(10)
-        self._write_cmd(ILI._regs['SWRESET'])  # Reset SW
+        self._write_cmd(ILI._regs['SWRESET'])                                  # Reset SW
         pyb.delay(50)
         self._graph_orientation()
-        self._write_cmd(ILI._regs['PTLON'])    # Partial mode ON
-        self._write_cmd(ILI._regs['PIXFMT'])   # Pixel format set
-        #self._write_data(0x66)    # 18-bit/pixel
-        self._write_data(0x55)    # 16-bit/pixel
+        self._write_cmd(ILI._regs['PTLON'])                                    # Partial mode ON
+        self._write_cmd(ILI._regs['PIXFMT'])                                   # Pixel format set
+        #self._write_data(0x66)                                                # 18-bit/pixel
+        self._write_data(0x55)                                                 # 16-bit/pixel
         self._write_cmd(ILI._regs['GAMMASET'])
         self._write_data(0x01)
-        self._write_cmd(ILI._regs['ETMOD'])    # Entry mode set
+        self._write_cmd(ILI._regs['ETMOD'])                                    # Entry mode set
         self._write_data(0x07)
-        self._write_cmd(ILI._regs['SLPOUT'])   # sleep mode OFF
+        self._write_cmd(ILI._regs['SLPOUT'])                                   # sleep mode OFF
         pyb.delay(10)
         self._write_cmd(ILI._regs['LCDON'])
         pyb.delay(10)
@@ -541,8 +543,7 @@ class BaseChars(ILI, BaseDraw):
         bgpixel = bgcolor * scale
         pixel = self._get_Npix_monoword(color) * scale
         words = ''.join(map(self._set_word_length, data))
-        # Garbage collection
-        self._gcCollect()
+        self._gcCollect()                                                      # Garbage collection
         words = bytes(words, 'ascii').replace(b'0', bgpixel).replace(b'1', pixel)
         self._write_data(words)
         self._graph_orientation()
@@ -603,7 +604,7 @@ class BaseImages(ILI):
     # solution from forum.micropython.org
     @staticmethod
     @micropython.asm_thumb
-    def _reverse(r0, r1):               # bytearray, len(bytearray)
+    def _reverse(r0, r1):                                                      # bytearray, len(bytearray)
         b(loopend)
         label(loopstart)
         ldrb(r2, [r0, 0])
@@ -612,7 +613,7 @@ class BaseImages(ILI):
         strb(r2, [r0, 1])
         add(r0, 2)
         label(loopend)
-        sub(r1, 2)  # End of loop?
+        sub(r1, 2)                                                             # End of loop?
         bpl(loopstart)
 
     @micropython.viper
@@ -621,9 +622,9 @@ class BaseImages(ILI):
         if f.read(2) != b'BM':
             from exceptions import BMPvalidationError
             raise BMPvalidationError
-        for pos in (10, 18, 22):                                 # startbit, width, height
+        for pos in (10, 18, 22):                                               # startbit, width, height
             f.seek(pos)
-            headers.append(struct.unpack('<H', f.read(2))[0])    # read double byte
+            headers.append(struct.unpack('<H', f.read(2))[0])                  # read double byte
         return headers
 
     def _get_image_points(self, pos, width, height):
@@ -664,6 +665,7 @@ class BaseImages(ILI):
         startbit = 8
         memread = 1024 * 6
         self._gcCollect()
+
         with open(imgcachepath + '/' + filename, 'rb') as f:
             width = struct.unpack('H', f.readline())[0]
             height = struct.unpack('H', f.readline())[0]
@@ -699,7 +701,6 @@ class BaseImages(ILI):
             self._render_bmp_image(filename, pos)
         self._graph_orientation()
 
-    @micropython.viper
     def clearImageCache(self, path):
         for obj in os.listdir(path):
             if obj.endswith('.' + cachedir):
@@ -714,7 +715,7 @@ class BaseImages(ILI):
         strings = self.initCh(color=DARKGREY, font='Arial_14')
         strings.printLn("Caching:", 25, 25)
         strings.printLn(image + '...', 45, 45)
-        memread = 60                                      # less memory write - more stable result
+        memread = 60                                                           # less memory write - more stable result
         cachedimage = image + '.' + cachedir
         if cachedimage in os.listdir(imgcachepath):
             os.remove(imgcachepath + '/' + cachedimage)
@@ -742,7 +743,6 @@ class BaseImages(ILI):
         pyb.delay(100)
         self._gcCollect()
 
-    @micropython.viper
     def cacheAllImages(self, imgdir=imgdir):
         if cachedir not in os.listdir(imgdir):
             os.chdir(imgdir)
@@ -754,7 +754,7 @@ class BaseImages(ILI):
         for image in os.listdir(imgdir):
             if image == cachedir: continue
             self.cacheImage(image, imgdir=imgdir)
-            pyb.delay(100)            # delay for better and stable result
+            pyb.delay(100)                                                     # delay for better and stable result
 
 class Chars(BaseChars):
 
@@ -801,7 +801,7 @@ class BaseWidgets(BaseDraw, BaseImages):
             chpos = self._return_chpos(chrwidth, 1) + 3 + chrwidth
             return chpos
         except KeyError:
-            return 5 if ord(char) is 32 else 0                         # if space between words
+            return 5 if ord(char) is 32 else 0                                 # if space between words
 
     def _get_maxstrW(self, width):
         return (width - 20 - self._border * 2)
@@ -815,32 +815,30 @@ class BaseWidgets(BaseDraw, BaseImages):
 
     def _compute_lines(self, string, maxstrW):
         words = string.split(' ')
-        length = [0]
-        lines = [[]]
+        lines = [[0,]]
         i = 0
+        space = self._get_strW(chr(32))
         for word in words:
-            spaced = word + chr(32)
-            temp = self._get_strW(spaced)
-            if length[i] + temp >= maxstrW:
-                if not i and len(lines[0]) is 0:                               # if first word is too large
-                    print(self._asserts)                                       # return '(..)'
-                    return [self._blank]
+            lenw = self._get_strW(word)
+            if lines[i][0] + lenw >= maxstrW:
+                if not i and not lines[0][0]:                                  # if first word is too large
+                    len_bl = self._get_strW(self._blank)
+                    assert len_bl < maxstrW, self._asserts
+                    print(self._asserts)
+                    return [[len_bl, self._blank]]                             # return '(..)'
+                lines.append([0, ])
                 i += 1
-                lines.append([])
-                length.append(0)
-                temp -= self._get_strW(chr(32))
-            length[i] += temp
+            lines[i][0] += lenw + space
             lines[i].append(word)
-        lines = [' '.join(line) for line in lines]
-        return lines
+        return [[line[0] - space, ' '.join(line[1:])] for line in lines]
 
     def _get_str_structure(self, string, xy, width, height):
         x, y = xy
         maxW = width if width and width < self.TFTWIDTH else self.TFTWIDTH - x - 5        # max widget width
-        maxH = height if height and height < self.TFTHEIGHT else self.TFTHEIGHT - y - 5   # max widget width
-        maxstrW  = self._get_maxstrW(maxW)                                     # max string width
-        strwidth = self._get_strW(string)                                      # current string width
+        maxH = height if height and height < self.TFTHEIGHT else self.TFTHEIGHT - y - 5   # max widget height
         border = self._border
+        maxstrW  = self._get_maxstrW(maxW)                                                # max string width
+        strwidth = self._get_strW(string)                                                 # current string width
         strheight = self._font['height']
         assert strheight < maxH, self._asserts
         widgH = strheight + 6 + border * 2 if height is None else maxH
@@ -848,10 +846,8 @@ class BaseWidgets(BaseDraw, BaseImages):
         structure = [0, widgH, strheight]
         # if width and height are defined, large string cuts to widget scale
         if strwidth >= maxstrW:
-            lines = self._compute_lines(string, maxstrW)
-            structure.extend([[self._get_strW(l), l] for l in lines])
-            lines = structure[3:]
-            linen = len(lines)
+            structure.extend(self._compute_lines(string, maxstrW))
+            linen = len(structure[3:])                                         # structure[3:] = all lines
             widgH = strheight * linen + 3 * (linen + 1) + border * 2
             structure[1] = widgH if height is None else maxH
             if widgH > maxH:
@@ -868,10 +864,9 @@ class BaseWidgets(BaseDraw, BaseImages):
             else:
                 strheight = widgH - 6 - border * 2
 
-            largest = max(lines)[0]
+            largest = max(structure[3:])[0]
             structure[0] = self._get_widgW(largest) if width is None else maxW
             structure[2] = strheight
-            assert largest < maxW, self._asserts
         else:
             structure[0] = self._get_widgW(strwidth) if width is None else maxW
             structure.extend([(strwidth, string)])
@@ -971,12 +966,6 @@ class LCD(Widgets):
 
     def cacheAllImages(self, *args, **kwargs):
         super(LCD, self).cacheAllImages(*args, **kwargs)
-
-    def charsTest(self, *args, **kwargs):
-        super(LCD, self).charsTest(*args, **kwargs)
-
-    def renderImageTest(self, *args, **kwargs):
-        return super(LCD, self).renderImageTest(*args, **kwargs)
 
     def label(self, *args, **kwargs):
         return super(LCD, self).label(*args, **kwargs)
