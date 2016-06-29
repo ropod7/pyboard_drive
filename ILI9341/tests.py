@@ -80,7 +80,7 @@ class BaseTests(LCD, Chars):
 
     def rectInfillTest(self, portrait=True, border=1):
         strobj = self.initCh(font='Arial_14', color=BLACK)
-        prevportr = ILI._portrait
+        prevportr = ILI.portrait
         if prevportr != portrait:
             self.portrait = portrait
         height = self.TFTHEIGHT
