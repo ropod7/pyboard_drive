@@ -50,7 +50,7 @@
 #    width  is 240px
 #    height is 320px
 #
-# Set up landscape mode:
+# Setup landscape mode:
 # lcd = LCD( portrait = False )
 #    width  is 320px
 #    height is 240px
@@ -77,12 +77,21 @@
 #     Entypo_13
 #     Entypo_23
 #
-#    define fonts by typing in string format:
-#        string = lcd.initCh(color=(R,G,B), font='Arial_14', [scale=1])
-#    You may change string objects font by:
-#        string.font = 'Arial_14'
-#    printing line:
-#        string.printLn('Hello, World', x, y, [scale=1])
+# define fonts by typing in string format:
+#     s = lcd.initCh(color=(R,G,B), font='Arial_14', [scale=1])
+#
+# You may change string objects font by:
+#     s.font = 'Arial_14'
+#
+# printing line:
+#     s.printLn('Hello, World', x, y, [ scale=1 ])
+#
+# Now available smart label widget:
+#     lcd.label(x, y, bordercolor, infillcolor, string, strobj=s,
+#                                    [ border=1, width=None, height=None ])
+#
+#     if user define dimensions of widget, pyboard computing string length
+#     in multiply lines order. Feel free to play with this approach.
 
 import os
 import struct
