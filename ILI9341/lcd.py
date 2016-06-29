@@ -121,7 +121,7 @@ class ILI(object):
     _rst  = object()
     _csx  = object()
     _dcx  = object()
-    _portrait  = True
+    portrait  = True
 
     _tftwidth  = 240                                                           # TFT width Constant
     _tftheight = 320                                                           # TFT height Constant
@@ -151,8 +151,8 @@ class ILI(object):
         ILI._rst.high()                                                        #
 
     @micropython.viper
-    def setPortrait(self, portrait):
-        self.portrait = portrait
+    def setPortrait(self, portr):
+        self.portrait = portr
 
     @micropython.viper
     def _gcCollect(self):
@@ -160,7 +160,7 @@ class ILI(object):
 
     @micropython.viper
     def _setWH(self):
-        if ILI._portrait:
+        if ILI.portrait:
             ILI._curheight = self.TFTHEIGHT = ILI._tftheight
             ILI._curwidth  = self.TFTWIDTH  = ILI._tftwidth
         else:
@@ -255,7 +255,7 @@ class ILI(object):
         # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
         # OR Landscape:
         # | MY=0 | MX=0 | MV=1 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
-        data = 0x48 if ILI._portrait else 0x28
+        data = 0x48 if ILI.portrait else 0x28
         self._write_data(data)
 
     @micropython.viper
@@ -265,7 +265,7 @@ class ILI(object):
         # | MY=1 | MX=1 | MV=1 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
         # OR Landscape:
         # | MY=0 | MX=1 | MV=1 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
-        data = 0xE8 if ILI._portrait else 0x58
+        data = 0xE8 if ILI.portrait else 0x58
         self._write_data(data)
 
     @micropython.viper
@@ -275,7 +275,7 @@ class ILI(object):
         # | MY=0 | MX=1 | MV=0 | ML=0 | BGR=1 | MH=0 | 0 | 0 |
         # OR Landscape:
         # | MY=0 | MX=1 | MV=0 | ML=1 | BGR=1 | MH=0 | 0 | 0 |
-        data = 0xC8 if ILI._portrait else 0x68
+        data = 0xC8 if ILI.portrait else 0x68
         self._write_data(data)
 
     def _set_window(self, x0, y0, x1, y1):
@@ -313,15 +313,14 @@ class ILI(object):
 
     @property
     def portrait(self):
-        return ILI._portrait
+        return self.portrait
 
     @portrait.setter
     def portrait(self, portr):
-        if isinstance(portr, bool):
-            ILI._portrait = portr
-        else:
+        if not isinstance(portr, bool):
             from exceptions import PortraitBoolError
             raise PortraitBoolError
+        self.portrait = portr
         self._setWH()
 
 class BaseDraw(ILI):
@@ -502,12 +501,12 @@ class BaseChars(ILI, BaseDraw):
         else:
             from exceptions import NoneTypeFont
             raise NoneTypeFont
-        self.portrait = ILI._portrait
+        self._portrait = ILI.portrait
         self._bgcolor = bgcolor if bgcolor is None else self._get_Npix_monoword(bgcolor)
         self._fontscale = scale
 
     def _setWH(self):
-        if ILI._portrait:
+        if ILI.portrait:
             self.TFTHEIGHT = ILI._tftheight
             self.TFTWIDTH  = ILI._tftwidth
         else:
@@ -517,8 +516,8 @@ class BaseChars(ILI, BaseDraw):
 
     @micropython.viper
     def _check_portrait(self):
-        if self.portrait != ILI._portrait:
-            self.portrait = ILI._portrait
+        if self._portrait != ILI.portrait:
+            self.portrait = ILI.portrait
 
     @staticmethod
     @micropython.asm_thumb
@@ -785,11 +784,10 @@ class Chars(BaseChars):
 
     @portrait.setter
     def portrait(self, portr):
-        if isinstance(portr, bool):
-            self._portrait = portr
-        else:
+        if not isinstance(portr, bool):
             from exceptions import PortraitBoolError
             raise PortraitBoolError
+        self._portrait = portr
         self._setWH()
 
 # should be replaced to own module
@@ -804,13 +802,16 @@ class BaseWidgets(BaseDraw, BaseImages):
             return 5 if ord(char) is 32 else 0                                 # if space between words
 
     def _get_maxstrW(self, width):
+        # compute max string length
         return (width - 20 - self._border * 2)
 
     def _get_widgW(self, width):
+        # compute widget width
         return width + 20 + self._border * 2
 
     @micropython.viper
     def _get_strW(self, string):
+        # getting current string length
         return sum(map(self._charwidth_mapper, string))
 
     def _compute_lines(self, string, maxstrW):
@@ -921,8 +922,8 @@ class LCD(Widgets):
     def reset(self):
         super(LCD, self).reset()
 
-    def setPortrait(self, *args):
-        super(LCD, self).setPortrait(*args)
+    def setPortrait(self, portr):
+        self.portrait = portr
 
     def drawPixel(self, *args, **kwargs):
         super(LCD, self).drawPixel(*args, **kwargs)
@@ -952,7 +953,7 @@ class LCD(Widgets):
         super(LCD, self).drawOvalFilled(*args, **kwargs)
 
     def initCh(self, **kwargs):
-        ch = Chars(portrait=ILI._portrait, **kwargs)
+        ch = Chars(portrait=ILI.portrait, **kwargs)
         return ch
 
     def renderBmp(self, *args, **kwargs):
@@ -972,16 +973,15 @@ class LCD(Widgets):
 
     @property
     def portrait(self):
-        return super(LCD, self).portrait
+        return ILI.portrait
 
     @portrait.setter
     def portrait(self, portr):
-        if isinstance(portr, bool):
-            ILI._portrait = portr
-        else:
+        if not isinstance(portr, bool):
             from exceptions import PortraitBoolError
             raise PortraitBoolError
-        super(LCD, self)._setWH()
+        ILI.portrait = portr
+        self._setWH()
 
     @property
     def resolution(self):
