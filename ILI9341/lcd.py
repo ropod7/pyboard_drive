@@ -57,8 +57,6 @@
 #
 # Template method for orientation management by Accel:
 #    Changing mode on the fly by calling:
-#        lcd.setPortrait( True [or False] )
-#    or:
 #        lcd.portrait = True [or False]
 #
 # User don't need to import fonts, they imports by python code
@@ -140,7 +138,7 @@ class ILI(object):
             self.reset()
             self._initILI()
 
-        self.setPortrait(portrait)
+        self.portrait = portrait
         ILI._cnt += 1
         self._gcCollect()
 
@@ -149,10 +147,6 @@ class ILI(object):
         ILI._rst.low()                                                         #
         pyb.delay(1)                                                           #    RESET LCD SCREEN
         ILI._rst.high()                                                        #
-
-    @micropython.viper
-    def setPortrait(self, portr):
-        self.portrait = portr
 
     @micropython.viper
     def _gcCollect(self):
@@ -686,6 +680,7 @@ class BaseImages(ILI):
     # 2. if part of image goes out of the screen, must to be rendered
     # only displayed part
     def renderBmp(self, filename, pos=None, cached=True, bgcolor=None):
+        self.portrait = True
         self._gcCollect()
         notcached = ''
         if bgcolor:
@@ -693,11 +688,11 @@ class BaseImages(ILI):
         self._image_orientation()
         if filename + '.' + cachedir not in os.listdir(imgcachepath):
             notcached = 'not cached'
-        if cached:
-            self._render_bmp_cache(filename, pos)
-        elif not cached or notcached:
+        if not cached or notcached:
             print(filename, imgdir[:-1], notcached)
             self._render_bmp_image(filename, pos)
+        elif cached:
+            self._render_bmp_cache(filename, pos)
         self._graph_orientation()
 
     def clearImageCache(self, path):
@@ -709,7 +704,7 @@ class BaseImages(ILI):
     # 1. resize large images to screen resolution
     def cacheImage(self, image, imgdir=imgdir):
         # setting portrait mode, because functionality not full at this moment
-        self.setPortrait(True)
+        self.portrait = True
         self.fillMonocolor(BLACK)
         strings = self.initCh(color=DARKGREY, font='Arial_14')
         strings.printLn("Caching:", 25, 25)
@@ -921,9 +916,6 @@ class LCD(Widgets):
 
     def reset(self):
         super(LCD, self).reset()
-
-    def setPortrait(self, portr):
-        self.portrait = portr
 
     def drawPixel(self, *args, **kwargs):
         super(LCD, self).drawPixel(*args, **kwargs)
